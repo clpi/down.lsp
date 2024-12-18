@@ -1,0 +1,8 @@
+**bin/
+nvim.lua
+test.md
+**.vscode/
+**.ropeproject/
+**.vscode-insiders/
+**.idea/
+**.vscode-test/
