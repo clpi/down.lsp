@@ -14,6 +14,8 @@ const (
 )
 
 type (
+	Client struct {
+	}
 	Lsp struct {
 		Name    string
 		Version string
@@ -32,10 +34,10 @@ func NewLsp() (Lsp, error) {
 	}, nil
 }
 
-func (lsp Lsp) NodeJs() error {
+func (lsp *Lsp) NodeJs() error {
 	return lsp.Server.RunNodeJs()
 }
 
-func (lsp Lsp) Stdio() error {
+func (lsp *Lsp) Stdio() error {
 	return lsp.Server.RunStdio()
 }

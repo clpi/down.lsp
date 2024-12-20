@@ -1,5 +1,15 @@
+**autoload/
+**after/
+**plugin/
+**before/
 **bin/
+**down
+**down-lsp
 nvim.lua
+**syntax/
+**test.dd
+**ftplugin/
+**ftdetect/
 test.md
 **.vscode/
 **.ropeproject/
