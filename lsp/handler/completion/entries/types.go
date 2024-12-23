@@ -2,13 +2,18 @@ package entries
 
 import protocol "github.com/tliron/glsp/protocol_3_16"
 
+var (
+	f = false
+	t = true
+)
+
 type (
 	Template struct {
-		Body        string
-		Document    protocol.DocumentUri
-		Workspace   string
-		Description string
-		URI         protocol.URI
+		Body        string               `json:"body",yaml:"body"`
+		Description string               `json:"description",yaml:"description"`
+		Document    protocol.DocumentUri `json:"document",yaml:"document"`
+		Workspace   string               `json:"workspace",yaml:"workspace"`
+		URI         protocol.URI         `json:"uri",yaml:"uri"`
 	}
 	Log struct {
 		Body string

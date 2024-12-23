@@ -1,4 +1,7 @@
 **autoload/
+*.dd
+*.dx
+*.dn
 **after/
 **plugin/
 **before/

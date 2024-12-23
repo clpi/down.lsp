@@ -1,25 +1,130 @@
 package completion
 
 import (
-	"github.com/clpi/down.lsp/lsp/handler/completion/entries"
-	"github.com/tliron/glsp"
+	"os"
+	"path"
+	"strings"
+
+	"github.com/clpi/down.lsp/lsp/files"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
-var (
-	trueVal  = true
-	falseVal = false
+var Edits = []protocol.TextDocumentEdit{}
 
+type (
+	LinkTrigger []string
+	TriggerChar []string
+	Completions []protocol.CompletionItem
+)
+
+var (
+	/// "at ...", "by ",
+	TriggerDate        = TriggerChar{"on ", "at ", "by ", "this ", "next ", "last "}
+	TriggerList        = TriggerChar{"-", "+", "*", "<li>", ")", "."}
+	TriggerFiles       = TriggerChar{"file://", "http://", "https://"}
+	TriggerCode        = TriggerChar{"`"}
+	TriggerCodeBlock   = TriggerChar{"```", "~~~"}
+	TriggerBracketOpen = TriggerChar{"["}
+	TriggerParenOpen   = TriggerChar{"("}
+	TriggerCurlyOpen   = TriggerChar{"{"}
+	TriggerHtml        = TriggerChar{"<"}
+	TriggerQuote       = TriggerChar{">"}
+	TriggerMath        = TriggerChar{"$"}
+	TriggerCommant     = TriggerChar{"--", "<!--", "-->"}
+	TriggerAt          = TriggerChar{"@"}
+	TriggerRefDetail   = TriggerChar{"\"", "'", "("}
+	TriggerLink        = TriggerChar{"["}
+	TriggerLinkAuto    = TriggerChar{"<"}
+	TriggerLinkTarget  = TriggerChar{"("}
+	TriggerImage       = TriggerChar{"!"}
+	TriggerTable       = TriggerChar{"|"}
+	TriggerDefinition  = TriggerChar{":"}
+	TriggerRef         = TriggerChar{"["}
+	TriggerTag         = TriggerChar{"#"}
+	TriggerHeader      = TriggerChar{"#"}
+	TriggerTask        = TriggerChar{"["}
+	TriggerVariable    = TriggerChar{"&"}
+)
+
+type CompletionTrigger struct {
+	Kind     protocol.CompletionTriggerKind
+	Position protocol.Position
+	Body     []byte
+	Char     *string
+}
+
+func Trigger(p *protocol.CompletionParams) *CompletionTrigger {
+	f, e := os.ReadFile(path.Clean(p.TextDocument.URI))
+	if e != nil {
+		return nil
+	}
+	return &CompletionTrigger{
+		Kind:     p.Context.TriggerKind,
+		Char:     p.Context.TriggerCharacter,
+		Position: p.Position,
+		Body:     f,
+	}
+}
+
+func (c *CompletionTrigger) Line() string {
+	return strings.Split(string(c.Body), "\n")[c.Position.Line]
+}
+
+func (c *CompletionTrigger) SplitLn() []string {
+	return strings.Split(c.Line(), " ")
+}
+
+func (c *CompletionTrigger) Next() byte {
+	return c.Line()[c.Position.Character+1]
+}
+
+func (c *CompletionTrigger) Prev() byte {
+	return c.Line()[c.Position.Character-1]
+}
+
+func (c *CompletionTrigger) MatchChar() []string {
+	switch *c.Char {
+	case "-":
+	case "*":
+	case "/":
+	case "+":
+	default:
+
+	}
+	return strings.Split(string(c.Body), " ")
+}
+
+func (c *CompletionTrigger) MatchKind() Completions {
+	out := Completions{}
+	switch c.Kind {
+	case protocol.CompletionTriggerKindTriggerCharacter:
+		return out
+	case protocol.CompletionTriggerKindTriggerForIncompleteCompletions:
+		return out
+	case protocol.CompletionTriggerKindInvoked:
+		return out
+	}
+	return out
+}
+
+func Match(p *protocol.CompletionParams) Completions {
+	var ct *CompletionTrigger = Trigger(p)
+	return ct.MatchKind()
+}
+
+var (
+	t                                   = true
+	f                                   = false
 	Provider protocol.CompletionOptions = protocol.CompletionOptions{
-		ResolveProvider: &trueVal,
+		ResolveProvider: &t,
 		WorkDoneProgressOptions: protocol.WorkDoneProgressOptions{
-			WorkDoneProgress: &trueVal,
+			WorkDoneProgress: &t,
 		},
 		AllCommitCharacters: []string{
 			" ", "@", "#", "$", "%", "&",
+			"*", "+", "-", "/", "<", "=",
 		},
 		TriggerCharacters: []string{
-			" ",
 			"@", "#", "$", "%", "&",
 			"*", "+", "-", "/", "<", "=",
 			">", "?", "^", "|", "~",
@@ -32,45 +137,9 @@ var (
 			"~", "`",
 		},
 	}
+	p        protocol.CompletionItemTag
+	Register = protocol.CompletionRegistrationOptions{
+		CompletionOptions:               Provider,
+		TextDocumentRegistrationOptions: files.DocumentRegistration,
+	}
 )
-
-func Completion(
-	c *glsp.Context,
-	p *protocol.CompletionParams,
-) (interface{}, error) {
-	var (
-		preselect = true
-		items     []protocol.CompletionItem
-	)
-	for s, sn := range entries.Snippets {
-		kind := protocol.CompletionItemKindSnippet
-		items = append(items, protocol.CompletionItem{
-			Label:     s,
-			Kind:      &kind,
-			Preselect: &preselect,
-			Documentation: &protocol.MarkupContent{
-				Value: "# Snippets\n\n## Snippet\n_ _ _\n### Snippet: " + sn.Description + "\n---\n" + sn.Body,
-				Kind:  protocol.MarkupKindMarkdown,
-			},
-			Detail:     &sn.Description,
-			InsertText: &sn.Body,
-		})
-
-	}
-	for w, e := range entries.Emojis {
-		ec := e
-		kind := protocol.CompletionItemKindConstant
-		items = append(items, protocol.CompletionItem{
-			Label:     w,
-			Kind:      &kind,
-			Preselect: &preselect,
-			Documentation: &protocol.MarkupContent{
-				Value: "# Emoji\n\n## Emoji\n_ _ _\n### Emoji: " + ec + "\n---\n" + ec,
-				Kind:  protocol.MarkupKindMarkdown,
-			},
-			Detail:     &ec,
-			InsertText: &ec,
-		})
-	}
-	return items, nil
-}

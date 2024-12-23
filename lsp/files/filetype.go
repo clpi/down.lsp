@@ -87,6 +87,9 @@ var (
 			"docd",
 		},
 	}
+	DocumentRegistration = protocol.TextDocumentRegistrationOptions{
+		DocumentSelector: &Filetypes,
+	}
 )
 
 func Ext(uri protocol.URI) string {
