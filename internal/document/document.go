@@ -7,6 +7,8 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
+type Data map[string]interface{}
+
 type (
 	DocumentID string
 	Document   struct {
@@ -28,9 +30,11 @@ type (
 func Base(d Document) string {
 	return filepath.Base(d.URI)
 }
+
 func Dir(d Document) string {
 	return filepath.Dir(d.URI)
 }
+
 func FromFile(s []byte) Document {
 	d := Document{}
 	return d

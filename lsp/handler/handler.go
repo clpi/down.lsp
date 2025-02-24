@@ -10,7 +10,6 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/clpi/down.lsp/lsp/handler/completion"
-	"github.com/clpi/down.lsp/lsp/handler/semantic"
 )
 
 var (
@@ -30,32 +29,32 @@ func Capabilities() protocol.ServerCapabilities {
 	cb.CompletionProvider = &completion.Provider
 	cb.CodeActionProvider = &ActionProvider
 	cb.CodeLensProvider = &LensProvider
-	cb.TextDocumentSync = &DocumentProvider.Sync
+	// cb.TextDocumentSync = &DocumentProvider.Sync
 	cb.ExecuteCommandProvider = &CommandProvider
-	cb.DocumentLinkProvider = &DocumentProvider.Link
-	cb.DeclarationProvider = &DocumentProvider.Declaration
-	cb.TypeDefinitionProvider = &DocumentProvider.TypeDefinition
-	cb.ImplementationProvider = &DocumentProvider.Implementation
-	cb.DocumentHighlightProvider = &DocumentProvider.Highlight
-	cb.MonikerProvider = &DocumentProvider.Moniker
-	cb.SemanticTokensProvider = &semantic.Provider
-	cb.TextDocumentSync = &DocumentProvider.Sync
+	// cb.DocumentLinkProvider = &DocumentProvider.Link
+	// cb.DeclarationProvider = &DocumentProvider.Declaration
+	// cb.TypeDefinitionProvider = &DocumentProvider.TypeDefinition
+	// cb.ImplementationProvider = &DocumentProvider.Implementation
+	// cb.DocumentHighlightProvider = &DocumentProvider.Highlight
+	// cb.MonikerProvider = &DocumentProvider.Moniker
+	// // cb.SemanticTokensProvider = &semantic.Provider
+	// cb.TextDocumentSync = &DocumentProvider.Sync
 	cb.HoverProvider = &DocumentProvider.Hover
-	cb.ColorProvider = &DocumentProvider.Color
-	cb.DefinitionProvider = &DocumentProvider.Definition
-	cb.DocumentSymbolProvider = &DocumentProvider.Symbol
-	cb.WorkspaceSymbolProvider = protocol.WorkspaceSymbolOptions{}
+	// cb.ColorProvider = &DocumentProvider.Color
+	// cb.DefinitionProvider = &DocumentProvider.Definition
+	// cb.DocumentSymbolProvider = &DocumentProvider.Symbol
+	// cb.WorkspaceSymbolProvider = protocol.WorkspaceSymbolOptions{}
 	cb.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{},
 		FileOperations:   &WorkspaceFilesProvider,
 	}
-	cb.LinkedEditingRangeProvider = &DocumentProvider.LinkedEditingRange
-	cb.SignatureHelpProvider = &SignatureOptions
-	cb.ReferencesProvider = &DocumentProvider.References
-	cb.Experimental = &map[string]interface{}{}
-	cb.DocumentFormattingProvider = &DocumentProvider.Format
-	cb.DocumentOnTypeFormattingProvider = &DocumentProvider.OnType
-	cb.DocumentRangeFormattingProvider = &DocumentProvider.RangeFormat
+	// cb.LinkedEditingRangeProvider = &DocumentProvider.LinkedEditingRange
+	// cb.SignatureHelpProvider = &SignatureOptions
+	// cb.ReferencesProvider = &DocumentProvider.References
+	// cb.Experimental = &map[string]interface{}{}
+	// cb.DocumentFormattingProvider = &DocumentProvider.Format
+	// cb.DocumentOnTypeFormattingProvider = &DocumentProvider.OnType
+	// cb.DocumentRangeFormattingProvider = &DocumentProvider.RangeFormat
 	return cb
 }
 
@@ -97,21 +96,21 @@ func (s *State) Initialized(c *glsp.Context, p *protocol.InitializedParams) erro
 
 func (s State) Handlers() protocol.Handler {
 	return protocol.Handler{
-		Initialize:                          s.Initialize,
-		Initialized:                         s.Initialized,
-		LogTrace:                            s.LogTrace,
-		SetTrace:                            s.SetTrace,
-		Shutdown:                            s.Shutdown,
-		Exit:                                s.Exit,
-		TextDocumentLinkedEditingRange:      s.LinkedEditing,
-		TextDocumentDocumentHighlight:       s.DocumentHighlight,
-		TextDocumentDocumentLink:            s.Links,
-		TextDocumentCodeLens:                s.CodeLens,
-		TextDocumentSemanticTokensFullDelta: s.Delta,
-		WorkspaceSemanticTokensRefresh:      s.Refresh,
-		TextDocumentSemanticTokensFull:      s.Full,
-		TextDocumentSemanticTokensRange:     s.Range,
-		TextDocumentSignatureHelp:           s.SignatureHelp,
+		Initialize:                     s.Initialize,
+		Initialized:                    s.Initialized,
+		LogTrace:                       s.LogTrace,
+		SetTrace:                       s.SetTrace,
+		Shutdown:                       s.Shutdown,
+		Exit:                           s.Exit,
+		TextDocumentLinkedEditingRange: s.LinkedEditing,
+		TextDocumentDocumentHighlight:  s.DocumentHighlight,
+		TextDocumentDocumentLink:       s.Links,
+		TextDocumentCodeLens:           s.CodeLens,
+		// TextDocumentSemanticTokensFullDelta: s.Delta,
+		// WorkspaceSemanticTokensRefresh:      s.Refresh,
+		// TextDocumentSemanticTokensFull:      s.Full,
+		// TextDocumentSemanticTokensRange:     s.Range,
+		// TextDocumentSignatureHelp:           s.SignatureHelp,
 
 		WorkspaceDidChangeConfiguration: s.Configure,
 		WorkspaceDidChangeWatchedFiles:  s.WsDidWatch,

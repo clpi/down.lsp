@@ -13,6 +13,9 @@ func (s *State) Completion(
 	items := []protocol.CompletionItem{}
 	items = entries.SnippetCompletions(items)
 	items = entries.EmojiCompletions(items)
+	items = entries.FileCompletions(items)
+	items = entries.HtmlTagCompletions(items)
+	items = entries.WorkspaceCompletions(items)
 	return items, nil
 }
 

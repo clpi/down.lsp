@@ -10,18 +10,18 @@ func EmojiCompletions(i []protocol.CompletionItem) []protocol.CompletionItem {
 		ec := e
 		kind := protocol.CompletionItemKindConstant
 		items = append(items, protocol.CompletionItem{
-			Label:               w,
-			Kind:                &kind,
-			Deprecated:          &f,
-			Data:                nil,
-			CommitCharacters:    CommitCharacters,
-			InsertTextMode:      &InsertAdjust,
-			InsertTextFormat:    &TextFormat,
-			Command:             nil,
-			TextEdit:            []protocol.TextEdit{},
-			AdditionalTextEdits: []protocol.TextEdit{},
-			Preselect:           &t,
-			Tags:                []protocol.CompletionItemTag{
+			Label:            w,
+			Kind:             &kind,
+			Deprecated:       &f,
+			Data:             nil,
+			CommitCharacters: CommitCharacters,
+			InsertTextMode:   &InsertAdjust,
+			InsertTextFormat: &TextFormat,
+			Command:          nil,
+			// TextEdit:            []protocol.TextEdit{},
+			// AdditionalTextEdits: []protocol.TextEdit{},
+			Preselect: &t,
+			Tags:      []protocol.CompletionItemTag{
 				// protocol.CompletionItemTagDeprecated,
 			},
 			Documentation: &protocol.MarkupContent{
