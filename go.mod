@@ -1,6 +1,6 @@
 module github.com/clpi/down.lsp
 
-go 1.23.2
+go 1.24.1
 
 require (
 	github.com/spf13/cobra v1.8.1
@@ -10,7 +10,10 @@ require (
 	go.lsp.dev/protocol v0.12.0
 )
 
-require github.com/segmentio/encoding v0.3.4 // indirect
+require (
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/segmentio/encoding v0.3.4 // indirect
+)
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
