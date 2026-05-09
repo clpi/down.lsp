@@ -99,21 +99,38 @@ var (
 	}
 )
 
+var (
+	aiQueryKind    protocol.CodeActionKind = protocol.CodeActionKindSource
+	aiQueryAction                          = protocol.CodeAction{
+		Command: &protocol.Command{
+			Command: "down.ai.query",
+			Title:   "Ask AI about selection",
+		},
+		Kind:        &aiQueryKind,
+		Title:       "Ask AI about selection",
+		IsPreferred: &f,
+	}
+	knowledgeSearchAction = protocol.CodeAction{
+		Command: &protocol.Command{
+			Command: "down.knowledge.search",
+			Title:   "Search knowledge graph",
+		},
+		Kind:  &aiQueryKind,
+		Title: "Search knowledge graph",
+	}
+)
+
 func (s *State) CodeAction(c *glsp.Context, p *protocol.CodeActionParams) (any, error) {
-	var (
-		actions []protocol.CodeAction = []protocol.CodeAction{}
-		_       protocol.Range        = protocol.Range{
-			Start: protocol.Position{
-				Line:      10,
-				Character: 10,
-			},
-			End: protocol.Position{
-				Line:      10,
-				Character: 20,
-			},
-		}
-	)
-	return append(actions, cursorCreateLink, generateToc), nil
+	actions := []protocol.CodeAction{cursorCreateLink, generateToc}
+
+	hasSelection := p.Range.Start.Line != p.Range.End.Line ||
+		p.Range.Start.Character != p.Range.End.Character
+
+	if hasSelection {
+		actions = append(actions, aiQueryAction, knowledgeSearchAction)
+	}
+
+	return actions, nil
 }
 
 // ! Resolve

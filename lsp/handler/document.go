@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"strings"
+
 	files "github.com/clpi/down.lsp/lsp/files"
+	"github.com/clpi/down.lsp/lsp/knowledge"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -113,11 +116,24 @@ var DocumentProvider = DocProvider{
 	},
 }
 
-func (s *State) DidSave(context *glsp.Context, params *protocol.DidSaveTextDocumentParams) error {
+func (s *State) DidSave(ctx *glsp.Context, params *protocol.DidSaveTextDocumentParams) error {
+	uri := string(params.TextDocument.URI)
+	if params.Text != nil {
+		s.Documents[uri] = *params.Text
+		knowledge.ExtractFromDocument(s.Graph, uri, *params.Text)
+		s.Graph.Save()
+		s.publishDiagnostics(ctx, uri, *params.Text)
+	}
 	return nil
 }
 
-func (s *State) DidClose(context *glsp.Context, params *protocol.DidCloseTextDocumentParams) error {
+func (s *State) DidClose(ctx *glsp.Context, params *protocol.DidCloseTextDocumentParams) error {
+	uri := string(params.TextDocument.URI)
+	delete(s.Documents, uri)
+	ctx.Notify(protocol.ServerTextDocumentPublishDiagnostics, protocol.PublishDiagnosticsParams{
+		URI:         protocol.DocumentUri(uri),
+		Diagnostics: []protocol.Diagnostic{},
+	})
 	return nil
 }
 
@@ -129,11 +145,23 @@ func (s *State) WillSave(context *glsp.Context, params *protocol.WillSaveTextDoc
 	return nil
 }
 
-func (s *State) DidOpen(context *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
+func (s *State) DidOpen(ctx *glsp.Context, params *protocol.DidOpenTextDocumentParams) error {
+	uri := string(params.TextDocument.URI)
+	text := params.TextDocument.Text
+	s.Documents[uri] = text
+	knowledge.ExtractFromDocument(s.Graph, uri, text)
+	s.publishDiagnostics(ctx, uri, text)
 	return nil
 }
 
 func (s *State) DidChange(context *glsp.Context, params *protocol.DidChangeTextDocumentParams) error {
+	uri := string(params.TextDocument.URI)
+	for _, change := range params.ContentChanges {
+		if c, ok := change.(protocol.TextDocumentContentChangeEventWhole); ok {
+			s.Documents[uri] = c.Text
+			knowledge.ExtractFromDocument(s.Graph, uri, c.Text)
+		}
+	}
 	return nil
 }
 
@@ -173,6 +201,166 @@ func (s *State) ColorPresentation(c *glsp.Context, p *protocol.ColorPresentation
 	return []protocol.ColorPresentation{}, nil
 }
 
-func (s *State) Symbol(*glsp.Context, *protocol.DocumentSymbolParams) (any, error) {
-	return nil, nil
+func (s *State) Symbol(_ *glsp.Context, p *protocol.DocumentSymbolParams) (any, error) {
+	if s.Graph == nil {
+		return nil, nil
+	}
+
+	uri := string(p.TextDocument.URI)
+	entities := s.Graph.EntitiesByDocument(uri)
+	if len(entities) == 0 {
+		return nil, nil
+	}
+
+	symbolKindMap := map[knowledge.EntityKind]protocol.SymbolKind{
+		knowledge.KindPerson:   protocol.SymbolKindVariable,
+		knowledge.KindConcept:  protocol.SymbolKindClass,
+		knowledge.KindProject:  protocol.SymbolKindPackage,
+		knowledge.KindAction:   protocol.SymbolKindFunction,
+		knowledge.KindTag:      protocol.SymbolKindKey,
+		knowledge.KindDocument: protocol.SymbolKindFile,
+		knowledge.KindDate:     protocol.SymbolKindEvent,
+		knowledge.KindPlace:    protocol.SymbolKindNamespace,
+		knowledge.KindCode:     protocol.SymbolKindObject,
+	}
+
+	var symbols []protocol.DocumentSymbol
+	for _, ent := range entities {
+		kind, ok := symbolKindMap[ent.Kind]
+		if !ok {
+			kind = protocol.SymbolKindString
+		}
+
+		line := protocol.UInteger(0)
+		for _, src := range ent.Sources {
+			if src.URI == uri {
+				line = protocol.UInteger(src.Line)
+				break
+			}
+		}
+
+		detail := string(ent.Kind)
+		symbols = append(symbols, protocol.DocumentSymbol{
+			Name:   ent.Name,
+			Detail: &detail,
+			Kind:   kind,
+			Range: protocol.Range{
+				Start: protocol.Position{Line: line, Character: 0},
+				End:   protocol.Position{Line: line, Character: protocol.UInteger(len(ent.Name))},
+			},
+			SelectionRange: protocol.Range{
+				Start: protocol.Position{Line: line, Character: 0},
+				End:   protocol.Position{Line: line, Character: protocol.UInteger(len(ent.Name))},
+			},
+		})
+	}
+
+	return symbols, nil
+}
+
+func (s *State) Definition(_ *glsp.Context, p *protocol.DefinitionParams) (any, error) {
+	if s.Graph == nil {
+		return nil, nil
+	}
+
+	uri := string(p.TextDocument.URI)
+	doc, ok := s.Documents[uri]
+	if !ok {
+		return nil, nil
+	}
+
+	lines := strings.Split(doc, "\n")
+	lineIdx := int(p.Position.Line)
+	if lineIdx >= len(lines) {
+		return nil, nil
+	}
+	line := lines[lineIdx]
+	col := int(p.Position.Character)
+	if col >= len(line) {
+		return nil, nil
+	}
+
+	wordStart, wordEnd := col, col
+	for wordStart > 0 && isWordChar(line[wordStart-1]) {
+		wordStart--
+	}
+	for wordEnd < len(line) && isWordChar(line[wordEnd]) {
+		wordEnd++
+	}
+	if wordStart >= wordEnd {
+		return nil, nil
+	}
+	word := line[wordStart:wordEnd]
+
+	results := s.Graph.Search(word)
+	if len(results) == 0 {
+		return nil, nil
+	}
+
+	var locations []protocol.Location
+	for _, ent := range results {
+		if strings.ToLower(ent.Name) != strings.ToLower(word) {
+			continue
+		}
+		for _, src := range ent.Sources {
+			if src.URI == uri && src.Line == lineIdx {
+				continue
+			}
+			locations = append(locations, protocol.Location{
+				URI: protocol.DocumentUri(src.URI),
+				Range: protocol.Range{
+					Start: protocol.Position{Line: protocol.UInteger(src.Line), Character: 0},
+					End:   protocol.Position{Line: protocol.UInteger(src.Line), Character: protocol.UInteger(len(ent.Name))},
+				},
+			})
+		}
+	}
+
+	if len(locations) == 0 {
+		return nil, nil
+	}
+	if len(locations) == 1 {
+		return locations[0], nil
+	}
+	return locations, nil
+}
+
+func isWordChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9') || b == '_' || b == '-' || b == '.'
+}
+
+func (s *State) publishDiagnostics(ctx *glsp.Context, uri string, text string) {
+	if s.Graph == nil {
+		return
+	}
+
+	kDiags := knowledge.DiagnoseDocument(s.Graph, uri, text)
+	lspDiags := make([]protocol.Diagnostic, len(kDiags))
+
+	sevMap := map[knowledge.DiagSeverity]protocol.DiagnosticSeverity{
+		knowledge.SeverityError:   protocol.DiagnosticSeverityError,
+		knowledge.SeverityWarning: protocol.DiagnosticSeverityWarning,
+		knowledge.SeverityInfo:    protocol.DiagnosticSeverityInformation,
+		knowledge.SeverityHint:    protocol.DiagnosticSeverityHint,
+	}
+
+	source := "down"
+	for i, d := range kDiags {
+		sev := sevMap[d.Severity]
+		lspDiags[i] = protocol.Diagnostic{
+			Range: protocol.Range{
+				Start: protocol.Position{Line: protocol.UInteger(d.Line), Character: protocol.UInteger(d.ColStart)},
+				End:   protocol.Position{Line: protocol.UInteger(d.Line), Character: protocol.UInteger(d.ColEnd)},
+			},
+			Severity: &sev,
+			Source:   &source,
+			Message:  d.Message,
+		}
+	}
+
+	ctx.Notify(protocol.ServerTextDocumentPublishDiagnostics, protocol.PublishDiagnosticsParams{
+		URI:         protocol.DocumentUri(uri),
+		Diagnostics: lspDiags,
+	})
 }

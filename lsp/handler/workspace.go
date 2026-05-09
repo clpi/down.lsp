@@ -1,10 +1,8 @@
 package handler
 
 import (
-
-	// "net/rpc/jsonrpc"
-
 	"github.com/clpi/down.lsp/lsp/files"
+	"github.com/clpi/down.lsp/lsp/knowledge"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -102,8 +100,47 @@ func (s *State) Configure(c *glsp.Context, p *protocol.DidChangeConfigurationPar
 	return nil
 }
 
-func (s *State) WorkspaceSymbol(*glsp.Context, *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
-	return []protocol.SymbolInformation{}, nil
+func (s *State) WorkspaceSymbol(_ *glsp.Context, p *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
+	if s.Graph == nil || p.Query == "" {
+		return []protocol.SymbolInformation{}, nil
+	}
+
+	results := s.Graph.Search(p.Query)
+	symbols := make([]protocol.SymbolInformation, 0, len(results))
+
+	kindMap := map[knowledge.EntityKind]protocol.SymbolKind{
+		knowledge.KindPerson:   protocol.SymbolKindVariable,
+		knowledge.KindConcept:  protocol.SymbolKindClass,
+		knowledge.KindProject:  protocol.SymbolKindPackage,
+		knowledge.KindAction:   protocol.SymbolKindFunction,
+		knowledge.KindTag:      protocol.SymbolKindKey,
+		knowledge.KindDocument: protocol.SymbolKindFile,
+		knowledge.KindDate:     protocol.SymbolKindEvent,
+		knowledge.KindPlace:    protocol.SymbolKindNamespace,
+		knowledge.KindCode:     protocol.SymbolKindObject,
+	}
+
+	for _, ent := range results {
+		kind, ok := kindMap[ent.Kind]
+		if !ok {
+			kind = protocol.SymbolKindString
+		}
+		for _, src := range ent.Sources {
+			symbols = append(symbols, protocol.SymbolInformation{
+				Name: ent.Name,
+				Kind: kind,
+				Location: protocol.Location{
+					URI: protocol.DocumentUri(src.URI),
+					Range: protocol.Range{
+						Start: protocol.Position{Line: protocol.UInteger(src.Line), Character: 0},
+						End:   protocol.Position{Line: protocol.UInteger(src.Line), Character: protocol.UInteger(len(ent.Name))},
+					},
+				},
+			})
+			break
+		}
+	}
+	return symbols, nil
 }
 
 func (s *State) ChangeWorkspaceFolders(c *glsp.Context, p *protocol.DidChangeWorkspaceFoldersParams) error {

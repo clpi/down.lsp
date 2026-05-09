@@ -27,7 +27,8 @@ type (
 )
 
 func NewServer() (Server, error) {
-	var handle protocol.Handler = handler.State{}.Handlers()
+	state := handler.NewState()
+	var handle protocol.Handler = state.Handlers()
 	return Server{
 		Info: Info{
 			Name:    Name,

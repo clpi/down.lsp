@@ -2,6 +2,8 @@ package handler
 
 import (
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/tliron/commonlog"
@@ -9,7 +11,9 @@ import (
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
+	"github.com/clpi/down.lsp/lsp/ai"
 	"github.com/clpi/down.lsp/lsp/handler/completion"
+	"github.com/clpi/down.lsp/lsp/knowledge"
 )
 
 var (
@@ -40,9 +44,9 @@ func Capabilities() protocol.ServerCapabilities {
 	// // cb.SemanticTokensProvider = &semantic.Provider
 	// cb.TextDocumentSync = &DocumentProvider.Sync
 	cb.HoverProvider = &DocumentProvider.Hover
-	// cb.ColorProvider = &DocumentProvider.Color
-	// cb.DefinitionProvider = &DocumentProvider.Definition
-	// cb.DocumentSymbolProvider = &DocumentProvider.Symbol
+	cb.DefinitionProvider = &DocumentProvider.Definition
+	cb.DocumentSymbolProvider = &DocumentProvider.Symbol
+	cb.TextDocumentSync = &DocumentProvider.Sync
 	// cb.WorkspaceSymbolProvider = protocol.WorkspaceSymbolOptions{}
 	cb.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{},
@@ -156,7 +160,7 @@ func (s State) Handlers() protocol.Handler {
 		// TextDocumentSemanticTokensRange:     semantic.Range,
 		// WorkspaceSemanticTokensRefresh:      semantic.Workspace,
 		// TextDocumentDeclaration:            document.Declaration,
-		// TextDocumentDefinition:             document.Definition,
+		TextDocumentDefinition:             s.Definition,
 		// TextDocumentFormatting: document.Format,
 	}
 }
@@ -167,7 +171,24 @@ func (s State) Handlers() protocol.Handler {
 // NewText: "[text](./text.md)",
 
 func NewState() State {
-	return State{}
+	home, _ := os.UserHomeDir()
+	storePath := filepath.Join(home, ".down", "knowledge.json")
+	graph := knowledge.NewGraph(storePath)
+
+	var engine *ai.Engine
+	provider, err := ai.SelectProvider()
+	if err != nil {
+		log.Printf("AI provider: %v (completions disabled, knowledge graph still active)", err)
+	} else {
+		log.Printf("AI provider: %s", provider.Name())
+		engine = ai.NewEngine(provider, graph)
+	}
+
+	return State{
+		Graph:     graph,
+		AI:        engine,
+		Documents: make(map[string]string),
+	}
 }
 
 func (s *State) Exit(context *glsp.Context) error {
@@ -175,9 +196,26 @@ func (s *State) Exit(context *glsp.Context) error {
 	return nil
 }
 
-func (s *State) Initialize(context *glsp.Context, params *protocol.InitializeParams) (any, error) {
+func (s *State) Initialize(ctx *glsp.Context, params *protocol.InitializeParams) (any, error) {
 	commonlog.NewInfoMessage(0, "down init...")
 	protocol.SetTraceValue(protocol.TraceValueVerbose)
+
+	if params.WorkspaceFolders != nil && s.Graph != nil {
+		go func() {
+			var roots []string
+			for _, f := range params.WorkspaceFolders {
+				roots = append(roots, f.URI)
+			}
+			n := knowledge.ScanWorkspace(s.Graph, roots)
+			log.Printf("Scanned %d markdown files into knowledge graph", n)
+		}()
+	} else if params.RootURI != nil && s.Graph != nil {
+		go func() {
+			n := knowledge.ScanWorkspace(s.Graph, []string{string(*params.RootURI)})
+			log.Printf("Scanned %d markdown files into knowledge graph", n)
+		}()
+	}
+
 	return protocol.InitializeResult{
 		Capabilities: Capabilities(),
 		ServerInfo:   ServerInfo(),

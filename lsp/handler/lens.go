@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+
 	"github.com/clpi/down.lsp/lsp/files"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
@@ -41,8 +43,27 @@ func (s *State) CodeLens(c *glsp.Context, p *protocol.CodeLensParams) ([]protoco
 			},
 		}
 	)
-	return append(lens, wsOpen, wsNew), nil
+	lens = append(lens, wsOpen, wsNew)
 
+	if s.Graph != nil {
+		uri := string(p.TextDocument.URI)
+		entities := s.Graph.EntitiesByDocument(uri)
+		if len(entities) > 0 {
+			title := fmt.Sprintf("Knowledge: %d entities tracked", len(entities))
+			lens = append(lens, protocol.CodeLens{
+				Range: protocol.Range{
+					Start: protocol.Position{Line: 0, Character: 0},
+					End:   protocol.Position{Line: 0, Character: 0},
+				},
+				Command: &protocol.Command{
+					Command:   "down.knowledge.summary",
+					Title:     title,
+				},
+			})
+		}
+	}
+
+	return lens, nil
 }
 
 func (s *State) LensResolve(c *glsp.Context, p *protocol.CodeLens) (*protocol.CodeLens, error) {
