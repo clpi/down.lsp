@@ -51,7 +51,11 @@ var (
 		"down.link.create.cursor",
 		"down.ai.query",
 		"down.ai.suggest",
+		"down.ai.expand",
+		"down.ai.summarize",
+		"down.ai.explain",
 		"down.ai.providers",
+		"down.ai.clear",
 		"down.knowledge.summary",
 		"down.knowledge.search",
 		"down.knowledge.entities",
@@ -82,8 +86,19 @@ func (s *State) Command(c *glsp.Context, p *protocol.ExecuteCommandParams) (any,
 		return s.cmdAIQuery(args)
 	case "down.ai.suggest":
 		return s.cmdAISuggest(args)
+	case "down.ai.expand":
+		return s.cmdAITransform(args, "expand")
+	case "down.ai.summarize":
+		return s.cmdAITransform(args, "summarize")
+	case "down.ai.explain":
+		return s.cmdAITransform(args, "explain")
 	case "down.ai.providers":
 		return ai.ProviderSummary(), nil
+	case "down.ai.clear":
+		if s.AI != nil {
+			s.AI.ClearHistory()
+		}
+		return "Conversation history cleared", nil
 	case "down.knowledge.summary":
 		return s.cmdKnowledgeSummary()
 	case "down.knowledge.search":
@@ -245,4 +260,30 @@ func (s *State) cmdKnowledgeRelations(args []interface{}) (any, error) {
 		sb.WriteString("\n")
 	}
 	return sb.String(), nil
+}
+
+func (s *State) cmdAITransform(args []interface{}, action string) (any, error) {
+	if s.AI == nil {
+		return "AI engine not initialized", nil
+	}
+	if len(args) < 1 {
+		return fmt.Sprintf("Usage: down.ai.%s <selected_text> [documentURI]", action), nil
+	}
+	text, ok := args[0].(string)
+	if !ok {
+		return "text must be a string", nil
+	}
+	var docURI string
+	if len(args) > 1 {
+		docURI, _ = args[1].(string)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*1e9)
+	defer cancel()
+
+	result, err := s.AI.TransformText(ctx, docURI, text, action)
+	if err != nil {
+		return fmt.Sprintf("AI %s failed: %v", action, err), nil
+	}
+	return result, nil
 }

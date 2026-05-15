@@ -211,3 +211,40 @@ func (e *Engine) SuggestRelated(ctx context.Context, docURI string) ([]string, e
 	}
 	return suggestions, nil
 }
+
+// TransformText applies an AI transformation to selected text.
+// action is one of "expand", "summarize", "explain".
+func (e *Engine) TransformText(ctx context.Context, docURI string, selectedText string, action string) (string, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	systemPrompt := e.buildSystemPrompt(docURI)
+
+	var instruction string
+	switch action {
+	case "expand":
+		instruction = "Expand the following text with more detail, examples, and elaboration. " +
+			"Keep the same tone and style. Output only the expanded text in markdown, no preamble."
+	case "summarize":
+		instruction = "Summarize the following text concisely. " +
+			"Capture the key points in a shorter form. Output only the summary in markdown, no preamble."
+	case "explain":
+		instruction = "Explain the following text clearly, as if to someone unfamiliar with the topic. " +
+			"Define terms and give context. Output only the explanation in markdown, no preamble."
+	default:
+		instruction = "Rewrite the following text. Output only the rewritten text in markdown."
+	}
+
+	prompt := fmt.Sprintf("%s\n\n---\n\n%s", instruction, selectedText)
+
+	resp, err := e.provider.Complete(ctx, CompletionRequest{
+		SystemPrompt: systemPrompt,
+		Messages:     []Message{{Role: "user", Content: prompt}},
+		MaxTokens:    2048,
+		Temperature:  0.4,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Text, nil
+}

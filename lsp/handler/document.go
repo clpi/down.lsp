@@ -187,9 +187,60 @@ func (s *State) Moniker(c *glsp.Context, p *protocol.MonikerParams) ([]protocol.
 	return append(monikers, m1), nil
 }
 
-func (s *State) References(c *glsp.Context, p *protocol.ReferenceParams) ([]protocol.Location, error) {
-	var refs []protocol.Location
-	return append(refs, protocol.Location{}), nil
+func (s *State) References(_ *glsp.Context, p *protocol.ReferenceParams) ([]protocol.Location, error) {
+	if s.Graph == nil {
+		return nil, nil
+	}
+
+	uri := string(p.TextDocument.URI)
+	doc, ok := s.Documents[uri]
+	if !ok {
+		return nil, nil
+	}
+
+	lines := strings.Split(doc, "\n")
+	lineIdx := int(p.Position.Line)
+	if lineIdx >= len(lines) {
+		return nil, nil
+	}
+	line := lines[lineIdx]
+	col := int(p.Position.Character)
+	if col >= len(line) {
+		return nil, nil
+	}
+
+	wordStart, wordEnd := col, col
+	for wordStart > 0 && isWordChar(line[wordStart-1]) {
+		wordStart--
+	}
+	for wordEnd < len(line) && isWordChar(line[wordEnd]) {
+		wordEnd++
+	}
+	if wordStart >= wordEnd {
+		return nil, nil
+	}
+	word := line[wordStart:wordEnd]
+
+	results := s.Graph.Search(word)
+	var locations []protocol.Location
+	for _, ent := range results {
+		if strings.ToLower(ent.Name) != strings.ToLower(word) {
+			continue
+		}
+		for _, src := range ent.Sources {
+			if !p.Context.IncludeDeclaration && src.URI == uri && src.Line == lineIdx {
+				continue
+			}
+			locations = append(locations, protocol.Location{
+				URI: protocol.DocumentUri(src.URI),
+				Range: protocol.Range{
+					Start: protocol.Position{Line: protocol.UInteger(src.Line), Character: 0},
+					End:   protocol.Position{Line: protocol.UInteger(src.Line), Character: protocol.UInteger(len(ent.Name))},
+				},
+			})
+		}
+	}
+	return locations, nil
 }
 
 func (s *State) Color(c *glsp.Context, p *protocol.DocumentColorParams) ([]protocol.ColorInformation, error) {

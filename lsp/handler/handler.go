@@ -35,19 +35,13 @@ func Capabilities() protocol.ServerCapabilities {
 	cb.CodeLensProvider = &LensProvider
 	// cb.TextDocumentSync = &DocumentProvider.Sync
 	cb.ExecuteCommandProvider = &CommandProvider
-	// cb.DocumentLinkProvider = &DocumentProvider.Link
-	// cb.DeclarationProvider = &DocumentProvider.Declaration
-	// cb.TypeDefinitionProvider = &DocumentProvider.TypeDefinition
-	// cb.ImplementationProvider = &DocumentProvider.Implementation
-	// cb.DocumentHighlightProvider = &DocumentProvider.Highlight
-	// cb.MonikerProvider = &DocumentProvider.Moniker
-	// // cb.SemanticTokensProvider = &semantic.Provider
-	// cb.TextDocumentSync = &DocumentProvider.Sync
+	cb.DocumentLinkProvider = &DocumentProvider.Link
+	cb.DocumentHighlightProvider = &DocumentProvider.Highlight
 	cb.HoverProvider = &DocumentProvider.Hover
 	cb.DefinitionProvider = &DocumentProvider.Definition
+	cb.ReferencesProvider = true
 	cb.DocumentSymbolProvider = &DocumentProvider.Symbol
 	cb.TextDocumentSync = &DocumentProvider.Sync
-	// cb.WorkspaceSymbolProvider = protocol.WorkspaceSymbolOptions{}
 	cb.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{},
 		FileOperations:   &WorkspaceFilesProvider,
