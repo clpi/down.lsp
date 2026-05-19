@@ -14,4 +14,6 @@ type (
 	}
 )
 
-func ParseNaturalDate()
+func ParseNaturalDate() *NaturalDate {
+	return nil
+}

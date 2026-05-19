@@ -99,24 +99,54 @@ var (
 	}
 )
 
-func (s *State) CodeAction(c *glsp.Context, p *protocol.CodeActionParams) (any, error) {
-	var (
-		actions []protocol.CodeAction = []protocol.CodeAction{}
-		_       protocol.Range        = protocol.Range{
-			Start: protocol.Position{
-				Line:      10,
-				Character: 10,
-			},
-			End: protocol.Position{
-				Line:      10,
-				Character: 20,
-			},
-		}
-	)
-	return append(actions, cursorCreateLink, generateToc), nil
+var (
+	aiActionKind = protocol.CodeActionKindSource
+)
+
+func makeAIAction(command, title string) protocol.CodeAction {
+	return protocol.CodeAction{
+		Command: &protocol.Command{
+			Command: command,
+			Title:   title,
+		},
+		Kind:  &aiActionKind,
+		Title: title,
+	}
 }
 
-// ! Resolve
-func (s *State) ActionResolve(c *glsp.Context, p *protocol.CodeAction) (*protocol.CodeAction, error) {
+func (s *State) CodeAction(_ *glsp.Context, p *protocol.CodeActionParams) (any, error) {
+	actions := []protocol.CodeAction{cursorCreateLink, generateToc}
+
+	hasSelection := p.Range.Start.Line != p.Range.End.Line ||
+		p.Range.Start.Character != p.Range.End.Character
+
+	if hasSelection {
+		actions = append(actions,
+			makeAIAction("down.ai.query", "Ask AI about selection"),
+			makeAIAction("down.ai.expand", "AI: Expand selection"),
+			makeAIAction("down.ai.summarize", "AI: Summarize selection"),
+			makeAIAction("down.ai.explain", "AI: Explain selection"),
+			makeAIAction("down.knowledge.search", "Search knowledge graph"),
+		)
+	}
+
+	if s.Graph != nil {
+		uri := string(p.TextDocument.URI)
+		entities := s.Graph.EntitiesByDocument(uri)
+		todoCount := 0
+		for _, ent := range entities {
+			if ent.Kind == "action" && ent.Properties["status"] == "todo" {
+				todoCount++
+			}
+		}
+		if todoCount > 0 {
+			actions = append(actions, makeAIAction("down.ai.suggest", "AI: Suggest next steps from open tasks"))
+		}
+	}
+
+	return actions, nil
+}
+
+func (s *State) ActionResolve(_ *glsp.Context, p *protocol.CodeAction) (*protocol.CodeAction, error) {
 	return p, nil
 }

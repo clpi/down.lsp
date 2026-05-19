@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"log"
+	"strings"
 
+	"github.com/clpi/down.lsp/lsp/ai"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -45,6 +49,17 @@ var (
 		"down.link.backlinks",
 		"down.link.create",
 		"down.link.create.cursor",
+		"down.ai.query",
+		"down.ai.suggest",
+		"down.ai.expand",
+		"down.ai.summarize",
+		"down.ai.explain",
+		"down.ai.providers",
+		"down.ai.clear",
+		"down.knowledge.summary",
+		"down.knowledge.search",
+		"down.knowledge.entities",
+		"down.knowledge.relations",
 	}
 	CommandProvider protocol.ExecuteCommandOptions = protocol.ExecuteCommandOptions{
 		WorkDoneProgressOptions: protocol.WorkDoneProgressOptions{
@@ -66,7 +81,209 @@ func (s *State) Command(c *glsp.Context, p *protocol.ExecuteCommandParams) (any,
 		}
 	case "down.workspace.open":
 	case "down.workspace.new":
+
+	case "down.ai.query":
+		return s.cmdAIQuery(args)
+	case "down.ai.suggest":
+		return s.cmdAISuggest(args)
+	case "down.ai.expand":
+		return s.cmdAITransform(args, "expand")
+	case "down.ai.summarize":
+		return s.cmdAITransform(args, "summarize")
+	case "down.ai.explain":
+		return s.cmdAITransform(args, "explain")
+	case "down.ai.providers":
+		return ai.ProviderSummary(), nil
+	case "down.ai.clear":
+		if s.AI != nil {
+			s.AI.ClearHistory()
+		}
+		return "Conversation history cleared", nil
+	case "down.knowledge.summary":
+		return s.cmdKnowledgeSummary()
+	case "down.knowledge.search":
+		return s.cmdKnowledgeSearch(args)
+	case "down.knowledge.entities":
+		return s.cmdKnowledgeEntities(args)
+	case "down.knowledge.relations":
+		return s.cmdKnowledgeRelations(args)
+
 	default:
 	}
 	return nil, nil
+}
+
+func (s *State) cmdAIQuery(args []interface{}) (any, error) {
+	if s.AI == nil {
+		return "AI engine not initialized", nil
+	}
+	if len(args) < 1 {
+		return "Usage: down.ai.query <question> [documentURI]", nil
+	}
+	question, ok := args[0].(string)
+	if !ok {
+		return "question must be a string", nil
+	}
+	var docURI string
+	if len(args) > 1 {
+		docURI, _ = args[1].(string)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*1e9)
+	defer cancel()
+
+	answer, err := s.AI.Query(ctx, docURI, question)
+	if err != nil {
+		return fmt.Sprintf("AI query failed: %v", err), nil
+	}
+	return answer, nil
+}
+
+func (s *State) cmdAISuggest(args []interface{}) (any, error) {
+	if s.AI == nil {
+		return "AI engine not initialized", nil
+	}
+	var docURI string
+	if len(args) > 0 {
+		docURI, _ = args[0].(string)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*1e9)
+	defer cancel()
+
+	suggestions, err := s.AI.SuggestRelated(ctx, docURI)
+	if err != nil {
+		return fmt.Sprintf("Suggest failed: %v", err), nil
+	}
+	return strings.Join(suggestions, "\n"), nil
+}
+
+func (s *State) cmdKnowledgeSummary() (any, error) {
+	if s.Graph == nil {
+		return "Knowledge graph not initialized", nil
+	}
+	return s.Graph.Summary(), nil
+}
+
+func (s *State) cmdKnowledgeSearch(args []interface{}) (any, error) {
+	if s.Graph == nil {
+		return "Knowledge graph not initialized", nil
+	}
+	if len(args) < 1 {
+		return "Usage: down.knowledge.search <query>", nil
+	}
+	query, ok := args[0].(string)
+	if !ok {
+		return "query must be a string", nil
+	}
+
+	results := s.Graph.Search(query)
+	if len(results) == 0 {
+		return "No results found", nil
+	}
+
+	var sb strings.Builder
+	for _, ent := range results {
+		sb.WriteString(fmt.Sprintf("- %s (%s) [%d mentions]\n", ent.Name, ent.Kind, ent.Mentions))
+	}
+	return sb.String(), nil
+}
+
+func (s *State) cmdKnowledgeEntities(args []interface{}) (any, error) {
+	if s.Graph == nil {
+		return "Knowledge graph not initialized", nil
+	}
+
+	var filterKind string
+	if len(args) > 0 {
+		filterKind, _ = args[0].(string)
+	}
+
+	entities := s.Graph.AllEntities()
+	if len(entities) == 0 {
+		return "No entities in knowledge graph", nil
+	}
+
+	var sb strings.Builder
+	for _, ent := range entities {
+		if filterKind != "" && string(ent.Kind) != filterKind {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("- %s (%s) [%d mentions]\n", ent.Name, ent.Kind, ent.Mentions))
+	}
+	if sb.Len() == 0 {
+		return fmt.Sprintf("No entities of kind %q", filterKind), nil
+	}
+	return sb.String(), nil
+}
+
+func (s *State) cmdKnowledgeRelations(args []interface{}) (any, error) {
+	if s.Graph == nil {
+		return "Knowledge graph not initialized", nil
+	}
+	if len(args) < 1 {
+		return "Usage: down.knowledge.relations <entity_name>", nil
+	}
+	query, ok := args[0].(string)
+	if !ok {
+		return "entity name must be a string", nil
+	}
+
+	results := s.Graph.Search(query)
+	if len(results) == 0 {
+		return "Entity not found", nil
+	}
+
+	var sb strings.Builder
+	for _, ent := range results {
+		sb.WriteString(fmt.Sprintf("## %s (%s)\n\n", ent.Name, ent.Kind))
+
+		outgoing := s.Graph.RelationsFrom(ent.ID)
+		if len(outgoing) > 0 {
+			sb.WriteString("**Outgoing:**\n")
+			for _, r := range outgoing {
+				if target, ok := s.Graph.Entities[r.To]; ok {
+					sb.WriteString(fmt.Sprintf("  → %s %s (%s)\n", r.Kind, target.Name, target.Kind))
+				}
+			}
+		}
+
+		incoming := s.Graph.RelationsTo(ent.ID)
+		if len(incoming) > 0 {
+			sb.WriteString("**Incoming:**\n")
+			for _, r := range incoming {
+				if source, ok := s.Graph.Entities[r.From]; ok {
+					sb.WriteString(fmt.Sprintf("  ← %s from %s (%s)\n", r.Kind, source.Name, source.Kind))
+				}
+			}
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
+}
+
+func (s *State) cmdAITransform(args []interface{}, action string) (any, error) {
+	if s.AI == nil {
+		return "AI engine not initialized", nil
+	}
+	if len(args) < 1 {
+		return fmt.Sprintf("Usage: down.ai.%s <selected_text> [documentURI]", action), nil
+	}
+	text, ok := args[0].(string)
+	if !ok {
+		return "text must be a string", nil
+	}
+	var docURI string
+	if len(args) > 1 {
+		docURI, _ = args[1].(string)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*1e9)
+	defer cancel()
+
+	result, err := s.AI.TransformText(ctx, docURI, text, action)
+	if err != nil {
+		return fmt.Sprintf("AI %s failed: %v", action, err), nil
+	}
+	return result, nil
 }

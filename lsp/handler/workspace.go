@@ -1,10 +1,12 @@
 package handler
 
 import (
-
-	// "net/rpc/jsonrpc"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/clpi/down.lsp/lsp/files"
+	"github.com/clpi/down.lsp/lsp/knowledge"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -37,73 +39,136 @@ var WorkspaceFilesProvider = protocol.ServerCapabilitiesWorkspaceFileOperations{
 // 	return nil, nil
 // }
 
-func (s *State) WsDidCreate(c *glsp.Context, p *protocol.CreateFilesParams) error {
+func (s *State) WsDidCreate(_ *glsp.Context, p *protocol.CreateFilesParams) error {
+	if s.Graph == nil {
+		return nil
+	}
+	for _, f := range p.Files {
+		uri := f.URI
+		s.scanFileIntoGraph(uri)
+	}
 	return nil
 }
 
-func (s *State) WsDelete(c *glsp.Context, p *protocol.DeleteFilesParams) (*protocol.WorkspaceEdit, error) {
+func (s *State) WsDelete(_ *glsp.Context, _ *protocol.DeleteFilesParams) (*protocol.WorkspaceEdit, error) {
 	return nil, nil
 }
 
-func (s *State) WsDidDelete(c *glsp.Context, p *protocol.DeleteFilesParams) error {
+func (s *State) WsDidDelete(_ *glsp.Context, p *protocol.DeleteFilesParams) error {
+	if s.Graph == nil {
+		return nil
+	}
+	for _, f := range p.Files {
+		s.Graph.ClearDocument(f.URI)
+	}
+	s.Graph.Save()
 	return nil
 }
 
-func (s *State) WsWatch(c *glsp.Context, p *protocol.DidChangeWatchedFilesParams) (*protocol.WorkspaceEdit, error) {
+func (s *State) WsWatch(_ *glsp.Context, _ *protocol.DidChangeWatchedFilesParams) (*protocol.WorkspaceEdit, error) {
 	return nil, nil
 }
 
-func (s *State) WsDidWatch(c *glsp.Context, p *protocol.DidChangeWatchedFilesParams) error {
+func (s *State) WsDidWatch(_ *glsp.Context, p *protocol.DidChangeWatchedFilesParams) error {
+	if s.Graph == nil {
+		return nil
+	}
+	for _, change := range p.Changes {
+		uri := string(change.URI)
+		switch change.Type {
+		case protocol.FileChangeTypeCreated, protocol.FileChangeTypeChanged:
+			s.scanFileIntoGraph(uri)
+		case protocol.FileChangeTypeDeleted:
+			s.Graph.ClearDocument(uri)
+			delete(s.Documents, uri)
+		}
+	}
+	s.Graph.Save()
 	return nil
 }
 
-func (s *State) WsRename(c *glsp.Context, p *protocol.RenameFilesParams) (*protocol.WorkspaceEdit, error) {
+func (s *State) WsRename(_ *glsp.Context, _ *protocol.RenameFilesParams) (*protocol.WorkspaceEdit, error) {
 	return nil, nil
 }
 
-func (s *State) WsDidRename(c *glsp.Context, p *protocol.RenameFilesParams) error {
+func (s *State) WsDidRename(_ *glsp.Context, p *protocol.RenameFilesParams) error {
+	if s.Graph == nil {
+		return nil
+	}
+	for _, f := range p.Files {
+		s.Graph.ClearDocument(f.OldURI)
+		delete(s.Documents, f.OldURI)
+		s.scanFileIntoGraph(f.NewURI)
+	}
+	s.Graph.Save()
 	return nil
 }
 
-func (s *State) WsWillCreate(c *glsp.Context, p *protocol.CreateFilesParams) (*protocol.WorkspaceEdit, error) {
+func (s *State) WsWillCreate(_ *glsp.Context, _ *protocol.CreateFilesParams) (*protocol.WorkspaceEdit, error) {
 	return nil, nil
 }
 
-func (s *State) Configure(c *glsp.Context, p *protocol.DidChangeConfigurationParams) error {
-	// s := map[string]interface{}{
-	// 	"markdown": map[string]interface{}{},
-	// 	"down": map[string]interface{}{
-	// 		"enabled": true,
-	// 		"codeAction": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 		"codeLens": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 		"inlayHint": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 		"diagnostics": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 		"hover": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 		"completion": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 		"signatureHelp": map[string]interface{}{
-	// 			"enabled": true,
-	// 		},
-	// 	},
-	// }
-	p.Settings = s
-	p.Settings = s
+func (s *State) scanFileIntoGraph(uri string) {
+	path := strings.TrimPrefix(uri, "file://")
+	path = strings.TrimPrefix(path, "file:")
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext != ".md" && ext != ".markdown" && ext != ".mdx" && ext != ".txt" {
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	text := string(data)
+	s.Documents[uri] = text
+	knowledge.ExtractFromDocument(s.Graph, uri, text)
+}
+
+func (s *State) Configure(_ *glsp.Context, _ *protocol.DidChangeConfigurationParams) error {
 	return nil
 }
 
-func (s *State) WorkspaceSymbol(*glsp.Context, *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
-	return []protocol.SymbolInformation{}, nil
+func (s *State) WorkspaceSymbol(_ *glsp.Context, p *protocol.WorkspaceSymbolParams) ([]protocol.SymbolInformation, error) {
+	if s.Graph == nil || p.Query == "" {
+		return []protocol.SymbolInformation{}, nil
+	}
+
+	results := s.Graph.Search(p.Query)
+	symbols := make([]protocol.SymbolInformation, 0, len(results))
+
+	kindMap := map[knowledge.EntityKind]protocol.SymbolKind{
+		knowledge.KindPerson:   protocol.SymbolKindVariable,
+		knowledge.KindConcept:  protocol.SymbolKindClass,
+		knowledge.KindProject:  protocol.SymbolKindPackage,
+		knowledge.KindAction:   protocol.SymbolKindFunction,
+		knowledge.KindTag:      protocol.SymbolKindKey,
+		knowledge.KindDocument: protocol.SymbolKindFile,
+		knowledge.KindDate:     protocol.SymbolKindEvent,
+		knowledge.KindPlace:    protocol.SymbolKindNamespace,
+		knowledge.KindCode:     protocol.SymbolKindObject,
+	}
+
+	for _, ent := range results {
+		kind, ok := kindMap[ent.Kind]
+		if !ok {
+			kind = protocol.SymbolKindString
+		}
+		for _, src := range ent.Sources {
+			symbols = append(symbols, protocol.SymbolInformation{
+				Name: ent.Name,
+				Kind: kind,
+				Location: protocol.Location{
+					URI: protocol.DocumentUri(src.URI),
+					Range: protocol.Range{
+						Start: protocol.Position{Line: protocol.UInteger(src.Line), Character: 0},
+						End:   protocol.Position{Line: protocol.UInteger(src.Line), Character: protocol.UInteger(len(ent.Name))},
+					},
+				},
+			})
+			break
+		}
+	}
+	return symbols, nil
 }
 
 func (s *State) ChangeWorkspaceFolders(c *glsp.Context, p *protocol.DidChangeWorkspaceFoldersParams) error {
