@@ -13,6 +13,7 @@ import (
 
 	"github.com/clpi/down.lsp/lsp/ai"
 	"github.com/clpi/down.lsp/lsp/handler/completion"
+	"github.com/clpi/down.lsp/lsp/handler/semantic"
 	"github.com/clpi/down.lsp/lsp/knowledge"
 )
 
@@ -42,6 +43,9 @@ func Capabilities() protocol.ServerCapabilities {
 	cb.ReferencesProvider = true
 	cb.DocumentSymbolProvider = &DocumentProvider.Symbol
 	cb.TextDocumentSync = &DocumentProvider.Sync
+	cb.SemanticTokensProvider = &semantic.Provider
+	cb.RenameProvider = true
+	cb.DocumentFormattingProvider = true
 	cb.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{},
 		FileOperations:   &WorkspaceFilesProvider,
@@ -104,10 +108,10 @@ func (s State) Handlers() protocol.Handler {
 		TextDocumentDocumentHighlight:  s.DocumentHighlight,
 		TextDocumentDocumentLink:       s.Links,
 		TextDocumentCodeLens:           s.CodeLens,
-		// TextDocumentSemanticTokensFullDelta: s.Delta,
-		// WorkspaceSemanticTokensRefresh:      s.Refresh,
-		// TextDocumentSemanticTokensFull:      s.Full,
-		// TextDocumentSemanticTokensRange:     s.Range,
+		TextDocumentSemanticTokensFullDelta: s.Delta,
+		WorkspaceSemanticTokensRefresh:      s.Refresh,
+		TextDocumentSemanticTokensFull:      s.Full,
+		TextDocumentSemanticTokensRange:     s.Range,
 		// TextDocumentSignatureHelp:           s.SignatureHelp,
 
 		WorkspaceDidChangeConfiguration: s.Configure,
@@ -155,7 +159,7 @@ func (s State) Handlers() protocol.Handler {
 		// WorkspaceSemanticTokensRefresh:      semantic.Workspace,
 		// TextDocumentDeclaration:            document.Declaration,
 		TextDocumentDefinition:             s.Definition,
-		// TextDocumentFormatting: document.Format,
+		TextDocumentFormatting:             s.Format,
 	}
 }
 

@@ -165,26 +165,123 @@ func (s *State) DidChange(context *glsp.Context, params *protocol.DidChangeTextD
 	return nil
 }
 
-func (s *State) Rename(context *glsp.Context, p *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
-	return nil, nil
-}
+func (s *State) Rename(_ *glsp.Context, p *protocol.RenameParams) (*protocol.WorkspaceEdit, error) {
+	uri := string(p.TextDocument.URI)
+	text, ok := s.Documents[uri]
+	if !ok {
+		return nil, nil
+	}
 
-func (s *State) PrepareRename(context *glsp.Context, p *protocol.PrepareRenameParams) (any, error) {
-	return nil, nil
-}
+	lines := strings.Split(text, "\n")
+	line := int(p.Position.Line)
+	if line >= len(lines) {
+		return nil, nil
+	}
 
-func (s *State) Moniker(c *glsp.Context, p *protocol.MonikerParams) ([]protocol.Moniker, error) {
-	var (
-		k1       protocol.MonikerKind = protocol.MonikerKindLocal
-		monikers []protocol.Moniker
-		m1       protocol.Moniker = protocol.Moniker{
-			Unique:     "unique",
-			Identifier: "identifier",
-			Kind:       &k1,
-			Scheme:     "file",
+	word := wordAtPosition(lines[line], int(p.Position.Character))
+	if word == "" {
+		return nil, nil
+	}
+
+	newName := p.NewName
+
+	// Find all documents containing this word and build edits
+	changes := map[protocol.DocumentUri][]protocol.TextEdit{}
+	for docURI, docText := range s.Documents {
+		docLines := strings.Split(docText, "\n")
+		for lineIdx, l := range docLines {
+			col := 0
+			lower := strings.ToLower(l)
+			target := strings.ToLower(word)
+			for {
+				idx := strings.Index(lower[col:], target)
+				if idx < 0 {
+					break
+				}
+				pos := col + idx
+				// Check word boundaries
+				if pos > 0 && isWordChar(l[pos-1]) {
+					col = pos + 1
+					continue
+				}
+				end := pos + len(word)
+				if end < len(l) && isWordChar(l[end]) {
+					col = pos + 1
+					continue
+				}
+				changes[protocol.DocumentUri(docURI)] = append(
+					changes[protocol.DocumentUri(docURI)],
+					protocol.TextEdit{
+						Range: protocol.Range{
+							Start: protocol.Position{Line: protocol.UInteger(lineIdx), Character: protocol.UInteger(pos)},
+							End:   protocol.Position{Line: protocol.UInteger(lineIdx), Character: protocol.UInteger(end)},
+						},
+						NewText: newName,
+					},
+				)
+				col = end
+			}
 		}
-	)
-	return append(monikers, m1), nil
+	}
+
+	if len(changes) == 0 {
+		return nil, nil
+	}
+
+	return &protocol.WorkspaceEdit{Changes: changes}, nil
+}
+
+func (s *State) PrepareRename(_ *glsp.Context, p *protocol.PrepareRenameParams) (any, error) {
+	uri := string(p.TextDocument.URI)
+	text, ok := s.Documents[uri]
+	if !ok {
+		return nil, nil
+	}
+
+	lines := strings.Split(text, "\n")
+	line := int(p.Position.Line)
+	if line >= len(lines) {
+		return nil, nil
+	}
+
+	word := wordAtPosition(lines[line], int(p.Position.Character))
+	if word == "" {
+		return nil, nil
+	}
+
+	// Find the word start position
+	col := int(p.Position.Character)
+	start := col
+	for start > 0 && isWordChar(lines[line][start-1]) {
+		start--
+	}
+
+	return protocol.Range{
+		Start: protocol.Position{Line: p.Position.Line, Character: protocol.UInteger(start)},
+		End:   protocol.Position{Line: p.Position.Line, Character: protocol.UInteger(start + len(word))},
+	}, nil
+}
+
+func wordAtPosition(line string, col int) string {
+	if col >= len(line) {
+		return ""
+	}
+	start := col
+	for start > 0 && isWordChar(line[start-1]) {
+		start--
+	}
+	end := col
+	for end < len(line) && isWordChar(line[end]) {
+		end++
+	}
+	if start == end {
+		return ""
+	}
+	return line[start:end]
+}
+
+func (s *State) Moniker(_ *glsp.Context, _ *protocol.MonikerParams) ([]protocol.Moniker, error) {
+	return nil, nil
 }
 
 func (s *State) References(_ *glsp.Context, p *protocol.ReferenceParams) ([]protocol.Location, error) {
