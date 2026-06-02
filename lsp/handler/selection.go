@@ -125,6 +125,9 @@ func (s *State) SelectionRange(_ *glsp.Context, p *protocol.SelectionRangeParams
 
 		result = append(result, wordSel)
 	}
-
 	return result, nil
+}
+
+func isWordChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_'
 }
