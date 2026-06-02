@@ -341,8 +341,7 @@ func (s *State) References(_ *glsp.Context, p *protocol.ReferenceParams) ([]prot
 }
 
 func (s *State) Color(c *glsp.Context, p *protocol.DocumentColorParams) ([]protocol.ColorInformation, error) {
-	var ci []protocol.ColorInformation
-	return append(ci, protocol.ColorInformation{}), nil
+	return []protocol.ColorInformation{}, nil
 }
 
 func (s *State) ColorPresentation(c *glsp.Context, p *protocol.ColorPresentationParams) ([]protocol.ColorPresentation, error) {

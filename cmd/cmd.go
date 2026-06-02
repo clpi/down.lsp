@@ -14,6 +14,7 @@ import (
 	lsc "github.com/clpi/down.lsp/cmd/lsp"
 	"github.com/clpi/down.lsp/cmd/new"
 	"github.com/clpi/down.lsp/cmd/note"
+	"github.com/clpi/down.lsp/cmd/profile"
 	"github.com/clpi/down.lsp/cmd/serve"
 	"github.com/clpi/down.lsp/cmd/shell"
 	"github.com/clpi/down.lsp/cmd/sync"
@@ -55,6 +56,7 @@ func Configure() {
 	Down.AddCommand(&sync.Sync)
 	Down.AddCommand(&Snippet)
 	Down.AddCommand(&Template)
+	Down.AddCommand(&profile.Profile)
 }
 
 func Run(c *context.Context) {
