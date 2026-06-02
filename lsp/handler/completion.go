@@ -15,6 +15,15 @@ func (s *State) Completion(
 	p *protocol.CompletionParams,
 ) (interface{}, error) {
 	items := []protocol.CompletionItem{}
+
+	// Detect slash command trigger
+	slashQuery := s.detectSlashCommand(p)
+	if slashQuery != nil {
+		// Slash command mode: only return slash commands
+		items = entries.SlashCommandCompletions(items, *slashQuery)
+		return items, nil
+	}
+
 	items = entries.SnippetCompletions(items)
 	items = entries.EmojiCompletions(items)
 	items = entries.FileCompletions(items)
@@ -23,6 +32,44 @@ func (s *State) Completion(
 	items = s.knowledgeCompletions(items, p)
 	items = s.aiCompletions(items, p)
 	return items, nil
+}
+
+// detectSlashCommand checks if the user is typing a /command at the beginning of a line.
+// Returns the query string after / if triggered, or nil if not a slash command context.
+func (s *State) detectSlashCommand(p *protocol.CompletionParams) *string {
+	uri := string(p.TextDocument.URI)
+	doc, ok := s.Documents[uri]
+	if !ok {
+		return nil
+	}
+
+	lines := strings.Split(doc, "\n")
+	lineIdx := int(p.Position.Line)
+	if lineIdx >= len(lines) {
+		return nil
+	}
+	line := lines[lineIdx]
+	col := int(p.Position.Character)
+	if col > len(line) {
+		col = len(line)
+	}
+	prefix := line[:col]
+
+	// Slash commands trigger when / is at the start of a line (optionally preceded by whitespace)
+	trimmed := strings.TrimLeft(prefix, " \t")
+	if !strings.HasPrefix(trimmed, "/") {
+		return nil
+	}
+
+	// Extract the query after /
+	query := trimmed[1:]
+
+	// Don't trigger if it looks like a file path (contains another /)
+	if strings.Contains(query, "/") {
+		return nil
+	}
+
+	return &query
 }
 
 func (s *State) knowledgeCompletions(items []protocol.CompletionItem, p *protocol.CompletionParams) []protocol.CompletionItem {

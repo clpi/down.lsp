@@ -20,6 +20,15 @@ const (
 	TokBold              // **bold** → "keyword"
 	TokItalic            // *italic* → "modifier"
 	TokEntity            // known knowledge graph entity → "type"
+	TokStrikethrough     // ~~text~~ → "regexp"
+	TokHighlight         // ==text== → "decorator"
+	TokFootnote          // [^ref] → "label"
+	TokMath              // $formula$ or $$block$$ → "operator"
+	TokTableDelimiter    // | cell | separators → "struct"
+	TokCallout           // > [!type] callout blocks → "typeParameter"
+	TokEmbed             // ![[embed]] → "interface"
+	TokHorizontalRule    // --- or *** → "enumMember"
+	TokListMarker        // - or * or 1. → "enum"
 )
 
 // Token modifier bit flags.
@@ -27,8 +36,13 @@ const (
 	ModDeclaration = 1 << iota // first occurrence / definition
 	ModDefinition
 	ModReadonly
-	ModDeprecated // e.g. completed task
-	ModLink       // clickable reference
+	ModDeprecated   // e.g. completed task
+	ModLink         // clickable reference
+	ModAbstract     // referenced but not yet created
+	ModStatic       // frontmatter / metadata
+	ModAsync        // scheduled / future date
+	ModModification // recently modified
+	ModDefaultLibrary // built-in / template
 )
 
 var (
@@ -39,19 +53,28 @@ var (
 	// TokenTypes are the legend entries the client uses for theming.
 	// Order must match the Tok* constants above.
 	TokenTypes = []string{
-		"namespace",  // heading
-		"macro",      // tag
-		"variable",   // mention
-		"class",      // wiki link
-		"function",   // md link
-		"event",      // task
-		"string",     // code span
-		"number",     // date
-		"property",   // frontmatter key
-		"comment",    // blockquote
-		"keyword",    // bold
-		"modifier",   // italic
-		"type",       // known entity
+		"namespace",      // heading
+		"macro",          // tag
+		"variable",       // mention
+		"class",          // wiki link
+		"function",       // md link
+		"event",          // task
+		"string",         // code span
+		"number",         // date
+		"property",       // frontmatter key
+		"comment",        // blockquote
+		"keyword",        // bold
+		"modifier",       // italic
+		"type",           // known entity
+		"regexp",         // strikethrough
+		"decorator",      // highlight
+		"label",          // footnote
+		"operator",       // math
+		"struct",         // table delimiter
+		"typeParameter",  // callout
+		"interface",      // embed
+		"enumMember",     // horizontal rule
+		"enum",           // list marker
 	}
 
 	TokenModifiers = []string{
@@ -60,6 +83,11 @@ var (
 		"readonly",
 		"deprecated",
 		"documentation",
+		"abstract",
+		"static",
+		"async",
+		"modification",
+		"defaultLibrary",
 	}
 
 	workDone = protocol.WorkDoneProgressOptions{

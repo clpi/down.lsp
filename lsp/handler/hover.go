@@ -84,7 +84,7 @@ func (s *State) Hover(c *glsp.Context, p *protocol.HoverParams) (*protocol.Hover
 	return &protocol.Hover{
 		Contents: protocol.MarkupContent{
 			Kind:  protocol.MarkupKindMarkdown,
-			Value: sb.String(),
+			Value: sb.String() + s.BacklinksSummary(uri),
 		},
 		Range: &protocol.Range{
 			Start: protocol.Position{Line: p.Position.Line, Character: protocol.UInteger(wordStart)},

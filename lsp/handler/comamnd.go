@@ -69,6 +69,8 @@ var (
 		"down.knowledge.reindex",
 		"down.profile.show",
 		"down.profile.set",
+		"down.inline.complete",
+		"down.backlinks",
 	}
 	CommandProvider protocol.ExecuteCommandOptions = protocol.ExecuteCommandOptions{
 		WorkDoneProgressOptions: protocol.WorkDoneProgressOptions{
@@ -124,6 +126,10 @@ func (s *State) Command(c *glsp.Context, p *protocol.ExecuteCommandParams) (any,
 		return s.cmdWorkspaceList()
 	case "down.ai.finetune":
 		return s.cmdAIFineTune()
+	case "down.inline.complete":
+		return s.InlineComplete(nil, p)
+	case "down.backlinks":
+		return s.cmdBacklinks(args)
 
 	default:
 	}
@@ -391,4 +397,19 @@ func (s *State) cmdAIFineTune() (any, error) {
 	}
 
 	return fmt.Sprintf("Generated %d training pairs from %d documents. Use the embedding fine-tune API to train.", len(pairs), len(s.Documents)), nil
+}
+
+func (s *State) cmdBacklinks(args []interface{}) (any, error) {
+	if len(args) < 1 {
+		return "Usage: down.backlinks <documentURI>", nil
+	}
+	uri, ok := args[0].(string)
+	if !ok {
+		return "URI must be a string", nil
+	}
+	result := s.ComputeBacklinks(uri)
+	if result.Count == 0 {
+		return fmt.Sprintf("No backlinks found for %s", result.Title), nil
+	}
+	return s.BacklinksSummary(uri), nil
 }
