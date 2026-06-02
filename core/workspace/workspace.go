@@ -302,9 +302,11 @@ func (w *Workspace) Close() {
 
 // Path returns a path relative to the workspace root.
 func (w *Workspace) Path(d ...string) string {
-	uri := w.URI
-	uri = filepath.Clean(uri)
-	return filepath.Join(uri, filepath.Join(d...))
+	p := w.URI
+	p = strings.TrimPrefix(p, "file://")
+	p = strings.TrimPrefix(p, "file:")
+	p = filepath.Clean(p)
+	return filepath.Join(p, filepath.Join(d...))
 }
 
 // Index returns the path to the workspace index file.
