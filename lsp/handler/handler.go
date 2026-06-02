@@ -50,6 +50,10 @@ func Capabilities() protocol.ServerCapabilities {
 		FirstTriggerCharacter: "\n",
 		MoreTriggerCharacter:  []string{},
 	}
+	cb.SignatureHelpProvider = &protocol.SignatureHelpOptions{
+		TriggerCharacters:   []string{"[", "(", "!", "|", "$", ">"},
+		RetriggerCharacters: []string{" ", ","},
+	}
 	cb.FoldingRangeProvider = true
 	cb.SelectionRangeProvider = true
 	cb.LinkedEditingRangeProvider = true
@@ -112,7 +116,7 @@ func (s State) Handlers() protocol.Handler {
 		WorkspaceSemanticTokensRefresh:      s.Refresh,
 		TextDocumentSemanticTokensFull:      s.Full,
 		TextDocumentSemanticTokensRange:     s.Range,
-		// TextDocumentSignatureHelp:           s.SignatureHelp,
+		TextDocumentSignatureHelp:           s.MarkdownSignatureHelp,
 
 		WorkspaceDidChangeConfiguration: s.Configure,
 		WorkspaceDidChangeWatchedFiles:  s.WsDidWatch,

@@ -71,6 +71,16 @@ var (
 		"down.profile.set",
 		"down.inline.complete",
 		"down.backlinks",
+		"down.chat",
+		"down.chat.history",
+		"down.chat.context",
+		"down.toc.generate",
+		"down.template.list",
+		"down.template.create",
+		"down.document.info",
+		"down.document.type",
+		"down.document.breadcrumbs",
+		"down.workspace.diagnostics",
 	}
 	CommandProvider protocol.ExecuteCommandOptions = protocol.ExecuteCommandOptions{
 		WorkDoneProgressOptions: protocol.WorkDoneProgressOptions{
@@ -130,6 +140,26 @@ func (s *State) Command(c *glsp.Context, p *protocol.ExecuteCommandParams) (any,
 		return s.InlineComplete(nil, p)
 	case "down.backlinks":
 		return s.cmdBacklinks(args)
+	case "down.chat":
+		return s.cmdChat(args)
+	case "down.chat.history":
+		return s.cmdChatHistory()
+	case "down.chat.context":
+		return s.cmdChatContext(args)
+	case "down.toc.generate":
+		return s.cmdTocGenerate(args)
+	case "down.template.list":
+		return s.cmdTemplateList()
+	case "down.template.create":
+		return s.cmdTemplateCreate(args)
+	case "down.document.info":
+		return s.cmdDocumentInfo(args)
+	case "down.document.type":
+		return s.cmdDocumentType(args)
+	case "down.document.breadcrumbs":
+		return s.cmdDocumentBreadcrumbs(args)
+	case "down.workspace.diagnostics":
+		return s.cmdWorkspaceDiagnostics(c)
 
 	default:
 	}
@@ -412,4 +442,154 @@ func (s *State) cmdBacklinks(args []interface{}) (any, error) {
 		return fmt.Sprintf("No backlinks found for %s", result.Title), nil
 	}
 	return s.BacklinksSummary(uri), nil
+}
+
+
+func (s *State) cmdTocGenerate(args []interface{}) (any, error) {
+	if len(args) < 1 {
+		return "Usage: down.toc.generate <documentURI> [insertLine]", nil
+	}
+	uri, _ := args[0].(string)
+	insertLine := 0
+	if len(args) > 1 {
+		if v, ok := args[1].(float64); ok {
+			insertLine = int(v)
+		}
+	}
+	edit := s.GenerateTOC(uri, insertLine)
+	if edit == nil {
+		return "No headings found to generate TOC", nil
+	}
+	return edit, nil
+}
+
+func (s *State) cmdTemplateList() (any, error) {
+	templates := s.ListTemplates()
+	var sb strings.Builder
+	sb.WriteString("## Available Templates\n\n")
+	for _, t := range templates {
+		sb.WriteString(fmt.Sprintf("- %s **%s** — %s (%s)\n", t.Icon, t.Name, t.Description, t.Category))
+	}
+	return sb.String(), nil
+}
+
+func (s *State) cmdTemplateCreate(args []interface{}) (any, error) {
+	if len(args) < 1 {
+		return "Usage: down.template.create <templateName> [outputDir] [title]", nil
+	}
+	name, _ := args[0].(string)
+	outputDir := "."
+	if len(args) > 1 {
+		if v, ok := args[1].(string); ok {
+			outputDir = v
+		}
+	}
+	vars := make(map[string]string)
+	if len(args) > 2 {
+		if v, ok := args[2].(string); ok {
+			vars["title"] = v
+		}
+	}
+	uri, err := s.CreateFromTemplate(name, vars, outputDir)
+	if err != nil {
+		return fmt.Sprintf("Failed: %v", err), nil
+	}
+	return fmt.Sprintf("Created: %s", uri), nil
+}
+
+func (s *State) cmdDocumentInfo(args []interface{}) (any, error) {
+	if len(args) < 1 {
+		return "Usage: down.document.info <documentURI>", nil
+	}
+	uri, _ := args[0].(string)
+	text, ok := s.Documents[uri]
+	if !ok {
+		return "Document not open", nil
+	}
+
+	words := len(strings.Fields(text))
+	lines := strings.Count(text, "\n") + 1
+	readMin := words / 200
+	if readMin == 0 {
+		readMin = 1
+	}
+	info := s.DetectDocumentType(uri)
+
+	var sb strings.Builder
+	sb.WriteString("## Document Info\n\n")
+	if info != nil {
+		sb.WriteString(fmt.Sprintf("- **Title**: %s\n", info.Title))
+		sb.WriteString(fmt.Sprintf("- **Type**: %s %s\n", info.Icon, info.Type))
+		if len(info.Tags) > 0 {
+			sb.WriteString(fmt.Sprintf("- **Tags**: %s\n", strings.Join(info.Tags, ", ")))
+		}
+		if info.Project != "" {
+			sb.WriteString(fmt.Sprintf("- **Project**: %s\n", info.Project))
+		}
+	}
+	sb.WriteString(fmt.Sprintf("- **Words**: %d\n", words))
+	sb.WriteString(fmt.Sprintf("- **Lines**: %d\n", lines))
+	sb.WriteString(fmt.Sprintf("- **Reading time**: ~%d min\n", readMin))
+
+	if s.Graph != nil {
+		entities := s.Graph.EntitiesByDocument(uri)
+		sb.WriteString(fmt.Sprintf("- **Entities**: %d\n", len(entities)))
+	}
+
+	bl := s.ComputeBacklinks(uri)
+	sb.WriteString(fmt.Sprintf("- **Backlinks**: %d\n", bl.Count))
+
+	return sb.String(), nil
+}
+
+func (s *State) cmdDocumentType(args []interface{}) (any, error) {
+	if len(args) < 1 {
+		return "Usage: down.document.type <documentURI>", nil
+	}
+	uri, _ := args[0].(string)
+	info := s.DetectDocumentType(uri)
+	if info == nil {
+		return "Could not detect document type", nil
+	}
+	return fmt.Sprintf("%s %s: %s", info.Icon, info.Type, info.Title), nil
+}
+
+func (s *State) cmdDocumentBreadcrumbs(args []interface{}) (any, error) {
+	if len(args) < 1 {
+		return "Usage: down.document.breadcrumbs <documentURI>", nil
+	}
+	uri, _ := args[0].(string)
+	info := s.DetectDocumentType(uri)
+	if info == nil || len(info.Breadcrumbs) == 0 {
+		return "No breadcrumbs available", nil
+	}
+	var parts []string
+	for _, b := range info.Breadcrumbs {
+		parts = append(parts, b.Icon+" "+b.Label)
+	}
+	return strings.Join(parts, " › "), nil
+}
+
+func (s *State) cmdWorkspaceDiagnostics(c *glsp.Context) (any, error) {
+	diags := s.RunWorkspaceDiagnostics(c)
+	if len(diags) == 0 {
+		return "No workspace-level issues found ✓", nil
+	}
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("## Workspace Diagnostics (%d issues)\n\n", len(diags)))
+	for _, d := range diags {
+		icon := "ℹ️"
+		switch d.Kind {
+		case WsDiagBrokenLink:
+			icon = "🔗"
+		case WsDiagOrphanDocument:
+			icon = "📄"
+		case WsDiagEmptyDocument:
+			icon = "📭"
+		case WsDiagDuplicateHeading:
+			icon = "📝"
+		}
+		sb.WriteString(fmt.Sprintf("- %s %s\n", icon, d.Message))
+	}
+	return sb.String(), nil
 }

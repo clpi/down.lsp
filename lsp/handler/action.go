@@ -115,7 +115,12 @@ func makeAIAction(command, title string) protocol.CodeAction {
 }
 
 func (s *State) CodeAction(_ *glsp.Context, p *protocol.CodeActionParams) (any, error) {
-	actions := []protocol.CodeAction{cursorCreateLink, generateToc}
+	actions := []protocol.CodeAction{cursorCreateLink}
+
+	// Add TOC generation if document has enough headings
+	if tocAction := s.TOCCodeAction(nil, p); tocAction != nil {
+		actions = append(actions, *tocAction)
+	}
 
 	hasSelection := p.Range.Start.Line != p.Range.End.Line ||
 		p.Range.Start.Character != p.Range.End.Character
