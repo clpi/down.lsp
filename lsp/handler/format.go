@@ -48,6 +48,110 @@ func (s *State) Format(_ *glsp.Context, p *protocol.DocumentFormattingParams) ([
 	}, nil
 }
 
+// RangeFormat implements textDocument/rangeFormatting.
+// Formats only the selected range of the document.
+func (s *State) RangeFormat(_ *glsp.Context, p *protocol.DocumentRangeFormattingParams) ([]protocol.TextEdit, error) {
+	uri := string(p.TextDocument.URI)
+	text, ok := s.Documents[uri]
+	if !ok {
+		return nil, nil
+	}
+
+	lines := strings.Split(text, "\n")
+	startLine := int(p.Range.Start.Line)
+	endLine := int(p.Range.End.Line)
+
+	if startLine >= len(lines) {
+		return nil, nil
+	}
+	if endLine >= len(lines) {
+		endLine = len(lines) - 1
+	}
+
+	// Extract the range text
+	rangeLines := lines[startLine : endLine+1]
+	rangeText := strings.Join(rangeLines, "\n")
+
+	// Format just this range
+	formatted := formatMarkdownRange(rangeText, p.Options)
+	if formatted == rangeText {
+		return nil, nil
+	}
+
+	// Compute end character of the last line in range
+	endChar := len(lines[endLine])
+
+	return []protocol.TextEdit{
+		{
+			Range: protocol.Range{
+				Start: protocol.Position{Line: protocol.UInteger(startLine), Character: 0},
+				End:   protocol.Position{Line: protocol.UInteger(endLine), Character: protocol.UInteger(endChar)},
+			},
+			NewText: formatted,
+		},
+	}, nil
+}
+
+// formatMarkdownRange formats a subset of markdown lines.
+// Similar to formatMarkdown but without document-level concerns (frontmatter, final newline).
+func formatMarkdownRange(text string, opts protocol.FormattingOptions) string {
+	lines := strings.Split(text, "\n")
+	var result []string
+
+	inCodeBlock := false
+	prevBlank := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track code blocks — don't format inside them
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inCodeBlock = !inCodeBlock
+			result = append(result, line)
+			prevBlank = false
+			continue
+		}
+		if inCodeBlock {
+			result = append(result, line)
+			prevBlank = false
+			continue
+		}
+
+		// Remove trailing whitespace (preserve intentional 2-space line breaks)
+		stripped := strings.TrimRight(line, " \t")
+		if len(line) > len(stripped) && len(line)-len(stripped) >= 2 {
+			line = stripped + "  "
+		} else {
+			line = stripped
+		}
+
+		// Ensure space after heading marker
+		line = reHeadingSpace.ReplaceAllString(line, "$1 $2")
+
+		// Normalize list item spacing
+		if m := reListIndent.FindStringSubmatch(line); m != nil {
+			rest := strings.TrimSpace(line[len(m[0]):])
+			line = m[1] + m[2] + " " + rest
+		}
+
+		// Collapse multiple blank lines
+		isBlank := strings.TrimSpace(line) == ""
+		if isBlank && prevBlank {
+			continue
+		}
+
+		// Ensure blank line before headings
+		if strings.HasPrefix(trimmed, "#") && len(result) > 0 && strings.TrimSpace(result[len(result)-1]) != "" {
+			result = append(result, "")
+		}
+
+		result = append(result, line)
+		prevBlank = isBlank
+	}
+
+	return strings.Join(result, "\n")
+}
+
 func formatMarkdown(text string, opts protocol.FormattingOptions) string {
 	lines := strings.Split(text, "\n")
 	var result []string

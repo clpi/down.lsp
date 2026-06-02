@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"regexp"
 	"strings"
 
 	files "github.com/clpi/down.lsp/lsp/files"
@@ -280,8 +281,176 @@ func wordAtPosition(line string, col int) string {
 	return line[start:end]
 }
 
-func (s *State) Moniker(_ *glsp.Context, _ *protocol.MonikerParams) ([]protocol.Moniker, error) {
-	return nil, nil
+// Moniker implements textDocument/moniker.
+// Monikers provide stable, cross-document identifiers for entities extracted from
+// the knowledge graph. This enables cross-repository navigation and global symbol identification.
+// Moniker schemes:
+//   - "down:entity" — knowledge graph entities (tags, people, concepts, projects)
+//   - "down:doc" — document-level identifiers
+//   - "down:heading" — heading-level anchors
+func (s *State) Moniker(_ *glsp.Context, p *protocol.MonikerParams) ([]protocol.Moniker, error) {
+	if s.Graph == nil {
+		return nil, nil
+	}
+
+	uri := string(p.TextDocument.URI)
+	doc, ok := s.Documents[uri]
+	if !ok {
+		return nil, nil
+	}
+
+	lines := strings.Split(doc, "\n")
+	lineIdx := int(p.Position.Line)
+	if lineIdx >= len(lines) {
+		return nil, nil
+	}
+	line := lines[lineIdx]
+	col := int(p.Position.Character)
+	if col >= len(line) {
+		return nil, nil
+	}
+
+	var monikers []protocol.Moniker
+
+	// Check if cursor is on a wiki link [[target]]
+	for _, m := range reLinkWiki.FindAllStringSubmatchIndex(line, -1) {
+		innerStart, innerEnd := m[2], m[3]
+		if col >= m[0] && col <= m[1] {
+			target := line[innerStart:innerEnd]
+			parts := strings.SplitN(target, "|", 2)
+			linkTarget := strings.TrimSpace(parts[0])
+			monikers = append(monikers, protocol.Moniker{
+				Scheme:     "down",
+				Identifier: "entity:" + strings.ToLower(linkTarget),
+				Unique:     protocol.UniquenessLevelGlobal,
+				Kind:       &monikerKindImport,
+			})
+			return monikers, nil
+		}
+	}
+
+	// Check if cursor is on a #tag
+	for _, m := range reSemanticTag.FindAllStringSubmatchIndex(line, -1) {
+		tagStart := m[0]
+		for tagStart < m[1] && line[tagStart] != '#' {
+			tagStart++
+		}
+		if col >= tagStart && col <= m[1] {
+			tag := line[tagStart+1 : m[1]]
+			monikers = append(monikers, protocol.Moniker{
+				Scheme:     "down",
+				Identifier: "tag:" + strings.ToLower(tag),
+				Unique:     protocol.UniquenessLevelGlobal,
+				Kind:       &monikerKindExport,
+			})
+			return monikers, nil
+		}
+	}
+
+	// Check if cursor is on a @mention
+	for _, m := range reSemanticMention.FindAllStringSubmatchIndex(line, -1) {
+		mentionStart := m[0]
+		for mentionStart < m[1] && line[mentionStart] != '@' {
+			mentionStart++
+		}
+		if col >= mentionStart && col <= m[1] {
+			mention := line[mentionStart+1 : m[1]]
+			monikers = append(monikers, protocol.Moniker{
+				Scheme:     "down",
+				Identifier: "person:" + strings.ToLower(mention),
+				Unique:     protocol.UniquenessLevelGlobal,
+				Kind:       &monikerKindImport,
+			})
+			return monikers, nil
+		}
+	}
+
+	// Check if cursor is on a heading
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "#") {
+		level := 0
+		for _, ch := range trimmed {
+			if ch == '#' {
+				level++
+			} else {
+				break
+			}
+		}
+		headingText := strings.TrimSpace(trimmed[level:])
+		slug := monikerSlug(headingText)
+		monikers = append(monikers, protocol.Moniker{
+			Scheme:     "down",
+			Identifier: "heading:" + slug,
+			Unique:     protocol.UniquenessLevelDocument,
+			Kind:       &monikerKindExport,
+		})
+		return monikers, nil
+	}
+
+	// Fall back: check if cursor is on a known entity word
+	wordStart, wordEnd := col, col
+	for wordStart > 0 && isWordChar(line[wordStart-1]) {
+		wordStart--
+	}
+	for wordEnd < len(line) && isWordChar(line[wordEnd]) {
+		wordEnd++
+	}
+	if wordStart >= wordEnd {
+		return nil, nil
+	}
+	word := line[wordStart:wordEnd]
+
+	results := s.Graph.Search(word)
+	for _, ent := range results {
+		if strings.EqualFold(ent.Name, word) {
+			monikers = append(monikers, protocol.Moniker{
+				Scheme:     "down",
+				Identifier: string(ent.Kind) + ":" + strings.ToLower(ent.Name),
+				Unique:     protocol.UniquenessLevelGlobal,
+				Kind:       &monikerKindImport,
+			})
+			break
+		}
+	}
+
+	if len(monikers) == 0 {
+		return nil, nil
+	}
+	return monikers, nil
+}
+
+var (
+	monikerKindExport = protocol.MonikerKindExport
+	monikerKindImport = protocol.MonikerKindImport
+
+	reSemanticTag     = reLinkWiki // reuse — will define proper ones below
+	reSemanticMention = reLinkMd   // placeholder — override below
+)
+
+func init() {
+	// Use the actual regex patterns for tag and mention detection in monikers
+	reSemanticTag = regexp.MustCompile(`(?:^|\s)#([a-zA-Z][a-zA-Z0-9_/-]*)`)
+	reSemanticMention = regexp.MustCompile(`(?:^|\s)@([a-zA-Z][a-zA-Z0-9_.-]*)`)
+}
+
+// monikerSlug creates a URL-safe slug from heading text.
+func monikerSlug(text string) string {
+	text = strings.ToLower(text)
+	var result []byte
+	for _, b := range []byte(text) {
+		if (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9') {
+			result = append(result, b)
+		} else if b == ' ' || b == '-' || b == '_' {
+			if len(result) > 0 && result[len(result)-1] != '-' {
+				result = append(result, '-')
+			}
+		}
+	}
+	// Trim trailing dashes
+	for len(result) > 0 && result[len(result)-1] == '-' {
+		result = result[:len(result)-1]
+	}
+	return string(result)
 }
 
 func (s *State) References(_ *glsp.Context, p *protocol.ReferenceParams) ([]protocol.Location, error) {
@@ -349,60 +518,205 @@ func (s *State) ColorPresentation(c *glsp.Context, p *protocol.ColorPresentation
 }
 
 func (s *State) Symbol(_ *glsp.Context, p *protocol.DocumentSymbolParams) (any, error) {
-	if s.Graph == nil {
-		return nil, nil
-	}
-
 	uri := string(p.TextDocument.URI)
-	entities := s.Graph.EntitiesByDocument(uri)
-	if len(entities) == 0 {
+	text, ok := s.Documents[uri]
+	if !ok {
 		return nil, nil
 	}
 
-	symbolKindMap := map[knowledge.EntityKind]protocol.SymbolKind{
-		knowledge.KindPerson:   protocol.SymbolKindVariable,
-		knowledge.KindConcept:  protocol.SymbolKindClass,
-		knowledge.KindProject:  protocol.SymbolKindPackage,
-		knowledge.KindAction:   protocol.SymbolKindFunction,
-		knowledge.KindTag:      protocol.SymbolKindKey,
-		knowledge.KindDocument: protocol.SymbolKindFile,
-		knowledge.KindDate:     protocol.SymbolKindEvent,
-		knowledge.KindPlace:    protocol.SymbolKindNamespace,
-		knowledge.KindCode:     protocol.SymbolKindObject,
+	lines := strings.Split(text, "\n")
+
+	// Build a hierarchical document outline from headings, tasks, and entities.
+	// This matches Notion's sidebar outline with nested sections.
+	type headingNode struct {
+		symbol   protocol.DocumentSymbol
+		level    int
+		children []protocol.DocumentSymbol
 	}
 
-	var symbols []protocol.DocumentSymbol
-	for _, ent := range entities {
-		kind, ok := symbolKindMap[ent.Kind]
-		if !ok {
-			kind = protocol.SymbolKindString
+	var rootSymbols []protocol.DocumentSymbol
+
+	// Stack for building hierarchy
+	type stackEntry struct {
+		level    int
+		symbols  *[]protocol.DocumentSymbol
+	}
+	stack := []stackEntry{{level: 0, symbols: &rootSymbols}}
+
+	inCode := false
+	inFrontmatter := false
+	taskIdx := 0
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Track frontmatter
+		if i == 0 && trimmed == "---" {
+			inFrontmatter = true
+			continue
+		}
+		if inFrontmatter {
+			if trimmed == "---" {
+				inFrontmatter = false
+				// Add frontmatter as a symbol
+				detail := "metadata"
+				rootSymbols = append(rootSymbols, protocol.DocumentSymbol{
+					Name:   "Frontmatter",
+					Detail: &detail,
+					Kind:   protocol.SymbolKindPackage,
+					Range: protocol.Range{
+						Start: protocol.Position{Line: 0, Character: 0},
+						End:   protocol.Position{Line: protocol.UInteger(i), Character: protocol.UInteger(len(line))},
+					},
+					SelectionRange: protocol.Range{
+						Start: protocol.Position{Line: 0, Character: 0},
+						End:   protocol.Position{Line: 0, Character: 3},
+					},
+				})
+			}
+			continue
 		}
 
-		line := protocol.UInteger(0)
-		for _, src := range ent.Sources {
-			if src.URI == uri {
-				line = protocol.UInteger(src.Line)
-				break
+		// Track code blocks
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inCode = !inCode
+			continue
+		}
+		if inCode {
+			continue
+		}
+
+		// Headings → hierarchical outline
+		if strings.HasPrefix(trimmed, "#") {
+			level := 0
+			for _, ch := range trimmed {
+				if ch == '#' {
+					level++
+				} else {
+					break
+				}
+			}
+			if level >= 1 && level <= 6 {
+				headingText := strings.TrimSpace(trimmed[level:])
+				if headingText == "" {
+					continue
+				}
+
+				// Find the end of this section (next heading of same or higher level)
+				endLine := len(lines) - 1
+				for j := i + 1; j < len(lines); j++ {
+					jt := strings.TrimSpace(lines[j])
+					if strings.HasPrefix(jt, "#") {
+						jLevel := 0
+						for _, ch := range jt {
+							if ch == '#' {
+								jLevel++
+							} else {
+								break
+							}
+						}
+						if jLevel <= level {
+							endLine = j - 1
+							break
+						}
+					}
+				}
+				// Trim trailing blanks
+				for endLine > i && strings.TrimSpace(lines[endLine]) == "" {
+					endLine--
+				}
+
+				detail := strings.Repeat("#", level)
+				sym := protocol.DocumentSymbol{
+					Name:   headingText,
+					Detail: &detail,
+					Kind:   symbolKindForHeadingLevel(level),
+					Range: protocol.Range{
+						Start: protocol.Position{Line: protocol.UInteger(i), Character: 0},
+						End:   protocol.Position{Line: protocol.UInteger(endLine), Character: protocol.UInteger(len(lines[endLine]))},
+					},
+					SelectionRange: protocol.Range{
+						Start: protocol.Position{Line: protocol.UInteger(i), Character: 0},
+						End:   protocol.Position{Line: protocol.UInteger(i), Character: protocol.UInteger(len(line))},
+					},
+				}
+
+				// Pop stack until we find a parent with lower level
+				for len(stack) > 1 && stack[len(stack)-1].level >= level {
+					stack = stack[:len(stack)-1]
+				}
+
+				parent := stack[len(stack)-1].symbols
+				*parent = append(*parent, sym)
+				// Push this heading as new parent for children
+				idx := len(*parent) - 1
+				stack = append(stack, stackEntry{
+					level:   level,
+					symbols: &(*parent)[idx].Children,
+				})
 			}
 		}
 
-		detail := string(ent.Kind)
-		symbols = append(symbols, protocol.DocumentSymbol{
-			Name:   ent.Name,
-			Detail: &detail,
-			Kind:   kind,
-			Range: protocol.Range{
-				Start: protocol.Position{Line: line, Character: 0},
-				End:   protocol.Position{Line: line, Character: protocol.UInteger(len(ent.Name))},
-			},
-			SelectionRange: protocol.Range{
-				Start: protocol.Position{Line: line, Character: 0},
-				End:   protocol.Position{Line: line, Character: protocol.UInteger(len(ent.Name))},
-			},
-		})
+		// Tasks → nested under current heading
+		if strings.Contains(trimmed, "- [ ]") || strings.Contains(trimmed, "- [x]") || strings.Contains(trimmed, "- [X]") {
+			taskIdx++
+			done := strings.Contains(trimmed, "- [x]") || strings.Contains(trimmed, "- [X]")
+			taskText := trimmed
+			if idx := strings.Index(taskText, "] "); idx >= 0 {
+				taskText = taskText[idx+2:]
+			}
+
+			kind := protocol.SymbolKindEvent
+			detail := "todo"
+			if done {
+				detail = "done"
+			}
+
+			sym := protocol.DocumentSymbol{
+				Name:   taskText,
+				Detail: &detail,
+				Kind:   kind,
+				Range: protocol.Range{
+					Start: protocol.Position{Line: protocol.UInteger(i), Character: 0},
+					End:   protocol.Position{Line: protocol.UInteger(i), Character: protocol.UInteger(len(line))},
+				},
+				SelectionRange: protocol.Range{
+					Start: protocol.Position{Line: protocol.UInteger(i), Character: 0},
+					End:   protocol.Position{Line: protocol.UInteger(i), Character: protocol.UInteger(len(line))},
+				},
+			}
+			if done {
+				dep := true
+				sym.Deprecated = &dep
+			}
+
+			parent := stack[len(stack)-1].symbols
+			*parent = append(*parent, sym)
+		}
 	}
 
-	return symbols, nil
+	if len(rootSymbols) == 0 {
+		return nil, nil
+	}
+	return rootSymbols, nil
+}
+
+// symbolKindForHeadingLevel returns appropriate SymbolKind based on heading depth.
+func symbolKindForHeadingLevel(level int) protocol.SymbolKind {
+	switch level {
+	case 1:
+		return protocol.SymbolKindModule
+	case 2:
+		return protocol.SymbolKindClass
+	case 3:
+		return protocol.SymbolKindMethod
+	case 4:
+		return protocol.SymbolKindFunction
+	case 5:
+		return protocol.SymbolKindField
+	default:
+		return protocol.SymbolKindVariable
+	}
 }
 
 func (s *State) Definition(_ *glsp.Context, p *protocol.DefinitionParams) (any, error) {

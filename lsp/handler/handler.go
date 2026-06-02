@@ -45,6 +45,11 @@ func Capabilities() protocol.ServerCapabilities {
 	cb.SemanticTokensProvider = &semantic.Provider
 	cb.RenameProvider = true
 	cb.DocumentFormattingProvider = true
+	cb.DocumentRangeFormattingProvider = true
+	cb.DocumentOnTypeFormattingProvider = &protocol.DocumentOnTypeFormattingOptions{
+		FirstTriggerCharacter: "\n",
+		MoreTriggerCharacter:  []string{},
+	}
 	cb.FoldingRangeProvider = true
 	cb.SelectionRangeProvider = true
 	cb.LinkedEditingRangeProvider = true
@@ -155,6 +160,8 @@ func (s State) Handlers() protocol.Handler {
 		// TextDocumentDeclaration:            document.Declaration,
 		TextDocumentDefinition:             s.Definition,
 		TextDocumentFormatting:             s.Format,
+		TextDocumentRangeFormatting:        s.RangeFormat,
+		TextDocumentOnTypeFormatting:       s.OnTypeFormatting,
 		TextDocumentFoldingRange:           s.FoldingRange,
 		TextDocumentSelectionRange:         s.SelectionRange,
 	}

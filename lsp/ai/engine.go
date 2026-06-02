@@ -248,3 +248,54 @@ func (e *Engine) TransformText(ctx context.Context, docURI string, selectedText 
 	}
 	return resp.Text, nil
 }
+
+
+// InlineComplete generates ghost-text style inline completions.
+// It produces continuations that flow naturally from the current line,
+// taking into account both preceding and following context.
+func (e *Engine) InlineComplete(ctx context.Context, docURI string, precedingText string, currentLine string, followingText string) ([]string, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	systemPrompt := e.buildSystemPrompt(docURI)
+	systemPrompt += "\n\nYou are providing inline ghost-text completions. " +
+		"Generate natural continuations that seamlessly extend the current line. " +
+		"Keep completions concise (1-3 lines max). " +
+		"Do not repeat the existing text. Only output the NEW text to append."
+
+	prompt := fmt.Sprintf(
+		"Context before cursor:\n```\n%s\n```\n\n"+
+			"Current line (cursor at end): `%s`\n\n",
+		precedingText, currentLine,
+	)
+	if followingText != "" {
+		prompt += fmt.Sprintf("Context after cursor:\n```\n%s\n```\n\n", followingText)
+	}
+	prompt += "Provide 2 possible inline completions, separated by ---. " +
+		"Each should be the text to INSERT at the cursor position. " +
+		"Be concise. No explanations."
+
+	resp, err := e.provider.Complete(ctx, CompletionRequest{
+		SystemPrompt: systemPrompt,
+		Messages:     []Message{{Role: "user", Content: prompt}},
+		MaxTokens:    200,
+		Temperature:  0.6,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse completions separated by ---
+	parts := strings.Split(resp.Text, "---")
+	completions := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" && len(part) < 500 {
+			completions = append(completions, part)
+		}
+	}
+	if len(completions) > 3 {
+		completions = completions[:3]
+	}
+	return completions, nil
+}
