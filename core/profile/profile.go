@@ -162,8 +162,8 @@ func LoadProfileFrom(path string) (*Profile, error) {
 
 // Save persists the profile to disk.
 func (p *Profile) Save() error {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	p.UpdatedAt = time.Now()
 
