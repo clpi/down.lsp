@@ -308,7 +308,6 @@ func (p *Profile) RecordFileAccess(uri, name, workspace string) {
 	p.UpdatedAt = time.Now()
 }
 
-// GetRecentFiles returns the most recent files.
 func (p *Profile) GetRecentFiles(limit int) []RecentFile {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -316,7 +315,9 @@ func (p *Profile) GetRecentFiles(limit int) []RecentFile {
 	if limit <= 0 || limit > len(p.RecentFiles) {
 		limit = len(p.RecentFiles)
 	}
-	return p.RecentFiles[:limit]
+	result := make([]RecentFile, limit)
+	copy(result, p.RecentFiles[:limit])
+	return result
 }
 
 // Summary returns a text summary of the profile.
