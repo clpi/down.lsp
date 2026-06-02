@@ -172,5 +172,35 @@ func (s *State) WorkspaceSymbol(_ *glsp.Context, p *protocol.WorkspaceSymbolPara
 }
 
 func (s *State) ChangeWorkspaceFolders(c *glsp.Context, p *protocol.DidChangeWorkspaceFoldersParams) error {
+	if s.Graph == nil {
+		return nil
+	}
+
+	// Handle added folders
+	for _, folder := range p.Event.Added {
+		go func(uri string) {
+			n := ScanWorkspace(s.Graph, []string{uri})
+			_ = n
+		}(folder.URI)
+	}
+
+	// Handle removed folders
+	for _, folder := range p.Event.Removed {
+		entities := s.Graph.EntitiesByDocument(folder.URI)
+		for _, ent := range entities {
+			for _, src := range ent.Sources {
+				if strings.HasPrefix(src.URI, folder.URI) {
+					s.Graph.ClearDocument(src.URI)
+				}
+			}
+		}
+	}
+
+	s.Graph.Save()
 	return nil
+}
+
+// ScanWorkspace is a helper for scanning workspace folders.
+func ScanWorkspace(g *knowledge.Graph, roots []string) int {
+	return knowledge.ScanWorkspace(g, roots)
 }

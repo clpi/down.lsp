@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/clpi/down.lsp/lsp/ai"
+	"github.com/clpi/down.lsp/lsp/knowledge"
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
@@ -46,6 +47,8 @@ var (
 		"down.workspace.open",
 		"down.workspace.new",
 		"down.workspace.delete",
+		"down.workspace.list",
+		"down.workspace.settings",
 		"down.link.backlinks",
 		"down.link.create",
 		"down.link.create.cursor",
@@ -56,10 +59,16 @@ var (
 		"down.ai.explain",
 		"down.ai.providers",
 		"down.ai.clear",
+		"down.ai.finetune",
 		"down.knowledge.summary",
 		"down.knowledge.search",
 		"down.knowledge.entities",
 		"down.knowledge.relations",
+		"down.knowledge.collections",
+		"down.knowledge.related",
+		"down.knowledge.reindex",
+		"down.profile.show",
+		"down.profile.set",
 	}
 	CommandProvider protocol.ExecuteCommandOptions = protocol.ExecuteCommandOptions{
 		WorkDoneProgressOptions: protocol.WorkDoneProgressOptions{
@@ -107,6 +116,14 @@ func (s *State) Command(c *glsp.Context, p *protocol.ExecuteCommandParams) (any,
 		return s.cmdKnowledgeEntities(args)
 	case "down.knowledge.relations":
 		return s.cmdKnowledgeRelations(args)
+	case "down.knowledge.reindex":
+		return s.cmdKnowledgeReindex()
+	case "down.knowledge.related":
+		return s.cmdKnowledgeRelated(args)
+	case "down.workspace.list":
+		return s.cmdWorkspaceList()
+	case "down.ai.finetune":
+		return s.cmdAIFineTune()
 
 	default:
 	}
@@ -286,4 +303,92 @@ func (s *State) cmdAITransform(args []interface{}, action string) (any, error) {
 		return fmt.Sprintf("AI %s failed: %v", action, err), nil
 	}
 	return result, nil
+}
+
+func (s *State) cmdKnowledgeReindex() (any, error) {
+	if s.Graph == nil {
+		return "Knowledge graph not initialized", nil
+	}
+	var roots []string
+	for uri := range s.Documents {
+		roots = append(roots, strings.TrimPrefix(uri, "file://"))
+	}
+	if len(roots) == 0 {
+		return "No documents to reindex", nil
+	}
+	// Re-extract from all open documents
+	count := 0
+	for uri, text := range s.Documents {
+		knowledge.ExtractFromDocument(s.Graph, uri, text)
+		count++
+	}
+	s.Graph.Save()
+	return fmt.Sprintf("Reindexed %d documents", count), nil
+}
+
+func (s *State) cmdKnowledgeRelated(args []interface{}) (any, error) {
+	if s.Graph == nil {
+		return "Knowledge graph not initialized", nil
+	}
+	if len(args) < 1 {
+		return "Usage: down.knowledge.related <documentURI>", nil
+	}
+	docURI, ok := args[0].(string)
+	if !ok {
+		return "URI must be a string", nil
+	}
+
+	entities := s.Graph.EntitiesByDocument(docURI)
+	if len(entities) == 0 {
+		return "No entities found in document", nil
+	}
+
+	// Find documents that share entities
+	relatedDocs := make(map[string]int)
+	for _, ent := range entities {
+		for _, src := range ent.Sources {
+			if src.URI != docURI {
+				relatedDocs[src.URI]++
+			}
+		}
+	}
+
+	if len(relatedDocs) == 0 {
+		return "No related documents found", nil
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Related documents:\n")
+	for uri, count := range relatedDocs {
+		sb.WriteString(fmt.Sprintf("- %s (%d shared entities)\n", uri, count))
+	}
+	return sb.String(), nil
+}
+
+func (s *State) cmdWorkspaceList() (any, error) {
+	if len(s.Workspaces) == 0 {
+		return "No workspaces open", nil
+	}
+	var sb strings.Builder
+	sb.WriteString("Open workspaces:\n")
+	for name := range s.Workspaces {
+		sb.WriteString(fmt.Sprintf("- %s\n", name))
+	}
+	return sb.String(), nil
+}
+
+func (s *State) cmdAIFineTune() (any, error) {
+	if s.AI == nil {
+		return "AI engine not initialized", nil
+	}
+	if len(s.Documents) < 3 {
+		return "Need at least 3 open documents to generate training data", nil
+	}
+
+	pairs := ai.GenerateTrainingPairs(s.Documents, 100)
+	if len(pairs) == 0 {
+		return "Could not generate training pairs from documents", nil
+	}
+
+	return fmt.Sprintf("Generated %d training pairs from %d documents. Use the embedding fine-tune API to train.", len(pairs), len(s.Documents)), nil
 }

@@ -19,6 +19,27 @@ var DownSettings map[string]interface{} = map[string]interface{}{
 		"completion": map[string]interface{}{
 			"enabled": true,
 		},
+		"ai": map[string]interface{}{
+			"enabled":     true,
+			"provider":    "auto",
+			"completions": true,
+		},
+		"knowledge": map[string]interface{}{
+			"enabled":   true,
+			"autoIndex": true,
+		},
+		"diagnostics": map[string]interface{}{
+			"enabled":         true,
+			"brokenLinks":     true,
+			"unresolvedLinks": true,
+			"overdueTasks":    true,
+		},
+		"formatting": map[string]interface{}{
+			"enabled":             true,
+			"trimTrailingSpaces":  true,
+			"ensureFinalNewline":  true,
+			"collapseBlankLines":  true,
+		},
 		"enabled": true,
 	},
 	"markdown": map[string]interface{}{
@@ -27,25 +48,11 @@ var DownSettings map[string]interface{} = map[string]interface{}{
 			"enabled": true,
 		},
 	},
-	"docdown": map[string]interface{}{
-		"enabled": true,
-		"codeAction": map[string]interface{}{
-			"enabled": true,
-		},
-		"codeLens": map[string]interface{}{
-			"enabled": true,
-		},
-		"inlayHint": map[string]interface{}{
-			"enabled": true,
-		},
-		"completion": map[string]interface{}{
-			"enabled": true,
-		},
-	},
 }
 
+// Configure processes configuration change notifications from the client.
 func Configure(c *glsp.Context, p *protocol.DidChangeConfigurationParams) error {
-	s := map[string]interface{}{
+	settings := map[string]interface{}{
 		"markdown": map[string]interface{}{},
 		"down": map[string]interface{}{
 			"enabled": true,
@@ -70,9 +77,17 @@ func Configure(c *glsp.Context, p *protocol.DidChangeConfigurationParams) error 
 			"signatureHelp": map[string]interface{}{
 				"enabled": true,
 			},
+			"ai": map[string]interface{}{
+				"enabled":     true,
+				"provider":    "auto",
+				"completions": true,
+			},
+			"knowledge": map[string]interface{}{
+				"enabled":   true,
+				"autoIndex": true,
+			},
 		},
 	}
-	p.Settings = s
-	p.Settings = s
+	p.Settings = settings
 	return nil
 }

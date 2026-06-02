@@ -34,7 +34,6 @@ func Capabilities() protocol.ServerCapabilities {
 	cb.CompletionProvider = &completion.Provider
 	cb.CodeActionProvider = &ActionProvider
 	cb.CodeLensProvider = &LensProvider
-	// cb.TextDocumentSync = &DocumentProvider.Sync
 	cb.ExecuteCommandProvider = &CommandProvider
 	cb.DocumentLinkProvider = &DocumentProvider.Link
 	cb.DocumentHighlightProvider = &DocumentProvider.Highlight
@@ -46,17 +45,13 @@ func Capabilities() protocol.ServerCapabilities {
 	cb.SemanticTokensProvider = &semantic.Provider
 	cb.RenameProvider = true
 	cb.DocumentFormattingProvider = true
+	cb.FoldingRangeProvider = true
+	cb.SelectionRangeProvider = true
+	cb.LinkedEditingRangeProvider = true
 	cb.Workspace = &protocol.ServerCapabilitiesWorkspace{
 		WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{},
 		FileOperations:   &WorkspaceFilesProvider,
 	}
-	// cb.LinkedEditingRangeProvider = &DocumentProvider.LinkedEditingRange
-	// cb.SignatureHelpProvider = &SignatureOptions
-	// cb.ReferencesProvider = &DocumentProvider.References
-	// cb.Experimental = &map[string]interface{}{}
-	// cb.DocumentFormattingProvider = &DocumentProvider.Format
-	// cb.DocumentOnTypeFormattingProvider = &DocumentProvider.OnType
-	// cb.DocumentRangeFormattingProvider = &DocumentProvider.RangeFormat
 	return cb
 }
 
@@ -160,6 +155,8 @@ func (s State) Handlers() protocol.Handler {
 		// TextDocumentDeclaration:            document.Declaration,
 		TextDocumentDefinition:             s.Definition,
 		TextDocumentFormatting:             s.Format,
+		TextDocumentFoldingRange:           s.FoldingRange,
+		TextDocumentSelectionRange:         s.SelectionRange,
 	}
 }
 
@@ -190,7 +187,10 @@ func NewState() State {
 }
 
 func (s *State) Exit(context *glsp.Context) error {
-	commonlog.NewInfoMessage(0, "down exitj...")
+	commonlog.NewInfoMessage(0, "down exit...")
+	if s.Graph != nil {
+		s.Graph.Save()
+	}
 	return nil
 }
 
